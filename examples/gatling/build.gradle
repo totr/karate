@@ -3,11 +3,11 @@ plugins {
 }
 
 ext {
-    karateVersion = '1.1.0'
+    karateVersion = '1.5.2'
 }
 
 dependencies {
-    testCompile "com.intuit.karate:karate-gatling:${karateVersion}"
+    testImplementation "io.karatelabs:karate-gatling:${karateVersion}"
 }
 
 repositories {
@@ -27,6 +27,9 @@ sourceSets {
             srcDir file('src/test/java')
             exclude '**/*.java'
             exclude '**/*.scala'
+        }
+        scala {
+            srcDirs = ['src/test/java']
         }
     }
 }

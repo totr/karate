@@ -84,9 +84,9 @@ class KarateHttpMockHandlerTest {
                 "url 'http://localhost:" + server.getPort() + "/hello'",
                 "path '/world/'",
                 "method get",
-                "match response == 'hello/world'"
+                "match response == '/hello/world'"
         );
-        matchVar("response", "hello/world");
+        matchVar("response", "/hello/world");
     }
 
     @Test
@@ -244,6 +244,22 @@ class KarateHttpMockHandlerTest {
         Object response = get("response");
         assertEquals(response, "{ \"id\" \"123\" }");
     }
+    
+    @Test
+    void testCookieDataIsNotLost() {
+        background()
+                .scenario("pathMatches('/first')",
+                        "def responseHeaders = { 'Set-Cookie': '1P_JAR=2022-11-02-11; expires=Fri, 02-Dec-2022 11:50:46 GMT; path=/; domain=.google.com; Secure' }");
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'first'",
+                "method get"
+        );
+        Map<String, Object> map = (Map) get("responseHeaders");
+        List<String> list = (List) map.get("set-cookie");
+        matchContains(list, "1P_JAR=2022-11-02-11; expires=Fri, 02-Dec-2022 11:50:46 GMT; path=/; domain=.google.com; Secure");    
+    }    
 
     @Test
     void testRedirectAfterPostWithCookie() {
@@ -264,7 +280,104 @@ class KarateHttpMockHandlerTest {
         matchVarContains("response", "{ cookie: ['foo1=bar1'] }");
         Map<String, Object> map = (Map) get("responseHeaders");
         List<String> list = (List) map.get("Set-Cookie");
-        matchContains(list, "['foo1=bar1; Domain=localhost', 'foo2=bar2; Domain=localhost']");
+        matchContains(list, "['foo1=bar1; Domain=localhost', 'foo2=bar2']");
+    }
+
+    @Test
+    void testOptionsCorsResponseHeaders() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = { 'access-control-allow-credentials': 'true' }"
+        );
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "method get"
+        );
+        Map<String, Object> map = (Map) get("responseHeaders");
+        List<String> list = (List) map.get("access-control-allow-credentials");
+        matchContains(list, "true");
+    }
+    
+    @Test
+    void testKarateResponse() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = { 'Some-Header': 'Some-Value' }"
+        );
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "method get",
+                "def headerValue = karate.response.header('some-header')",
+                "def headerValues = karate.response.headerValues('some-header')"
+        );
+        matchVar("headerValue", "Some-Value");
+        matchVar("headerValues", "['Some-Value']");
+    }
+    
+    @Test
+    void testKarateRequest() {
+        background().scenario(
+                "karate.request.header('some-header') == 'Some-Value'",
+                "def response = 'success'"
+        );
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "header Some-Header = 'Some-Value'",
+                "method get"
+        );
+        matchVar("response", "success");
+    }
+
+    @Test
+    void testEmptyCookieNameSet() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = {'Set-Cookie': ' '}"
+
+        );
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "method get"
+        );
+        matchVarContains("responseHeaders", "{ set-cookie: [''] }");
+    }
+
+    @Test
+    void testEmptyCookieNameAndEmptyAttributesSet() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = {'Set-Cookie': ';'}"
+
+        );
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "method get"
+        );
+        matchVarContains("responseHeaders", "{ set-cookie: [';'] }");
+    }
+
+    @Test
+    void testEmptyCookieNameAndNonEmptyAttributeSet() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = {'Set-Cookie': '; SameSite=Strict'}");
+        startMockServer();
+        run(
+                urlStep(),
+                "path 'hello'",
+                "method get"
+        );
+        matchVarContains("responseHeaders", "{ set-cookie: ['; SameSite=Strict'] }");
     }
 
 }

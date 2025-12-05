@@ -3,7 +3,7 @@
 
 ### Hello World
 
-<a href="https://twitter.com/ptrthomas/status/1160680107784036353"><img src="src/test/resources/driver-hello-world.jpg" height="230"/></a>
+<a href="https://twitter.com/getkarate/status/1167533484560142336"><img src="src/test/resources/driver-hello-world.jpg" height="230"/></a>
 
 # Index
 
@@ -11,10 +11,9 @@
 <tr>
   <th>Start</th>
   <td>
-      <a href="https://github.com/intuit/karate/wiki/ZIP-Release">ZIP Release</a>
-    | <a href="https://github.com/intuit/karate#maven">Java</a>
-    | <a href="https://github.com/intuit/karate#quickstart">Maven Quickstart</a>
-    | <a href="https://github.com/intuit/karate#index">Karate - Main Index</a>
+      <a href="https://github.com/karatelabs/karate/wiki/IDE-Support">IDE Support</a>
+    | <a href="https://github.com/karatelabs/karate#quickstart">Maven Quickstart</a>
+    | <a href="https://github.com/karatelabs/karate#index">Karate - Main Index</a>
   </td>
 </tr>
 <tr>
@@ -26,6 +25,7 @@
     | <a href="#karate-chrome">Docker / <code>karate-chrome</code></a>
     | <a href="#driver-types">Driver Types</a> 
     | <a href="#playwright">Playwright</a> 
+    | <a href="#playwright-legacy">Playwright Legacy</a> 
     | <a href="#timeout"><code>timeout()</code></a>
     | <a href="#driversessionid"><code>driver.sessionId</code></a>
   </td>
@@ -39,16 +39,18 @@
     | <a href="#chaining">Chaining</a> 
     | <a href="#function-composition">Function Composition</a>
     | <a href="#script">Browser JavaScript</a>
+    | <a href="#looping">Looping</a>
+    | <a href="#drop-downs">Drop Downs</a>
     | <a href="#debugging">Debugging</a>
     | <a href="#retry">Retries</a>
     | <a href="#wait-api">Waits</a>
-    | <a href="#distributed-testing">Distributed Testing</a>
     | <a href="#proxy">Proxy</a>
     | <a href="#intercepting-http-requests">Intercepting HTTP Requests</a>
     | <a href="#file-upload">File Upload</a>
     | <a href="#code-reuse">Code Reuse</a>
     | <a href="#hybrid-tests">Hybrid Tests</a>
     | <a href="#java-api">Java API</a>
+    | <a href="#visual-testing">Visual Testing</a>
   </td>
 </tr>
 <tr>
@@ -177,9 +179,9 @@
 ## Capabilities
 
 * Simple, clean syntax that is well suited for people new to programming or test-automation
-* All-in-one framework that includes [parallel-execution](https://github.com/intuit/karate#parallel-execution), [HTML reports](https://github.com/intuit/karate#junit-html-report), [environment-switching](https://github.com/intuit/karate#switching-the-environment), and [CI integration](https://github.com/intuit/karate#test-reports)
-* Cross-platform - with even the option to run as a programming-language *neutral* [stand-alone executable](https://github.com/intuit/karate/wiki/ZIP-Release)
-* Support for [`iframe`-s](#switchframe), [switching browser tabs](#switchpage), and [uploading files](#driverinputfile)
+* All-in-one framework that includes [parallel-execution](https://github.com/karatelabs/karate#parallel-execution), [HTML reports](https://github.com/karatelabs/karate#junit-html-report), [environment-switching](https://github.com/karatelabs/karate#switching-the-environment), [Visual Testing](#visual-testing), and [CI integration](https://github.com/karatelabs/karate#test-reports)
+* Cross-platform - with even the option to run as a programming-language *neutral* [stand-alone executable](https://github.com/karatelabs/karate/wiki/ZIP-Release)
+* Support for [`iframe`-s](#switchframe), [switching tabs](#switchpage), multiple URL domains, and [uploading files](#driverinputfile)
 * No need to learn complicated programming concepts such as "callbacks", "`async` / `await`" and "promises"
 * Option to use [wildcard](#wildcard-locators) and ["friendly" locators](#friendly-locators) without needing to inspect the HTML-page source, CSS, or internal XPath structure
 * Chrome-native automation using the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) (equivalent to [Puppeteer](https://pptr.dev))
@@ -187,12 +189,11 @@
 * [Cross-Browser support](https://twitter.com/ptrthomas/status/1048260573513666560) including [Microsoft Edge on Windows](https://twitter.com/ptrthomas/status/1046459965668388866) and [Safari on Mac](https://twitter.com/ptrthomas/status/1047152170468954112)
 * [Playwright](https://playwright.dev) support (experimental) for even more cross-browser and headless options, that can connect to a server or Docker container using the Playwright wire-protocol
 * [Parallel execution on a single node](https://twitter.com/ptrthomas/status/1159295560794308609), cloud-CI environment or [Docker](#configure-drivertarget) - without needing a "master node" or "grid"
-* You can even run tests in parallel across [different machines](#distributed-testing) - and Karate will aggregate the results
 * Embed [video-recordings of tests](#karate-chrome) into the HTML report from a Docker container
-* [Android and iOS mobile support](https://github.com/intuit/karate/issues/743) via [Appium](http://appium.io)
-* Seamlessly mix API and UI tests within the same script, for example [sign-in using an API](https://github.com/intuit/karate#http-basic-authentication-example) and speed-up your tests
-* [Intercept HTTP requests](#intercepting-http-requests) made by the browser and re-use [Karate mocks](https://github.com/intuit/karate/tree/master/karate-netty) to stub / modify server responses and even replace HTML content
-* Use the power of Karate's [`match`](https://github.com/intuit/karate#prepare-mutate-assert) assertions and [core capabilities](https://github.com/intuit/karate#features) for UI assertions
+* [experimental] [Android and iOS mobile support](https://github.com/karatelabs/karate/issues/743) via [Appium](http://appium.io)
+* Seamlessly mix API and UI tests within the same script, for example [sign-in using an API](https://github.com/karatelabs/karate#http-basic-authentication-example) and speed-up your tests
+* [Intercept HTTP requests](#intercepting-http-requests) made by the browser and re-use [Karate mocks](https://github.com/karatelabs/karate/tree/master/karate-netty) to stub / modify server responses and even replace HTML content
+* Use the power of Karate's [`match`](https://github.com/karatelabs/karate#prepare-mutate-assert) assertions and [core capabilities](https://github.com/karatelabs/karate#features) for UI assertions
 * Simple [retry](#retry) and [wait](#wait-api) strategy, no need to graduate from any test-automation university to understand the difference between "implicit waits", "explicit waits" and "fluent waits" :)
 * Simpler, [elegant, and *DRY* alternative](#locator-lookup) to the so-called "Page Object Model" pattern
 * Carefully designed [fluent-API](#chaining) to handle common combinations such as a [`submit()` + `click()`](#submit) action
@@ -221,10 +222,11 @@ To understand how Karate compares to other UI automation frameworks, this articl
   * run as part of Karate's [regression suite](https://stackoverflow.com/a/66005331/143475) via GitHub Actions
 
 ## Mobile / Appium
+> Please consider Mobile support as experimental. But we are very close and there are some teams that use Karate for simple use-cases. Please contribute code if you can.
 * Refer to this [example project](../examples/mobile-test)
 
 ## Windows
-* [Example](../karate-demo/src/test/java/driver/windows/calc.feature) - but also see the [`karate-robot`](https://github.com/intuit/karate/tree/master/karate-robot) for an alternative approach.
+* [Example](../karate-demo/src/test/java/driver/windows/calc.feature) - but also see the [`karate-robot`](https://github.com/karatelabs/karate/tree/master/karate-robot) for an alternative approach.
 
 # Driver Configuration
 
@@ -278,7 +280,7 @@ key | description
 `beforeStart` | default `null`, an OS command that will be executed before commencing a `Scenario` (and before the `executable` is invoked if applicable) typically used to start video-recording
 `afterStop` | default `null`, an OS command that will be executed after a `Scenario` completes, typically used to stop video-recording and save the video file to an output folder
 `videoFile` | default `null`, the path to the video file that will be added to the end of the test report, if it does not exist, it will be ignored
-`httpConfig` | optional, and typically only used for remote WebDriver usage where the HTTP client [configuration](https://github.com/intuit/karate#configure) needs to be tweaked, e.g. `{ readTimeout: 120000 }` (also see `timeout` below)
+`httpConfig` | optional, and typically only used for remote WebDriver usage where the HTTP client [configuration](https://github.com/karatelabs/karate#configure) needs to be tweaked, e.g. `{ readTimeout: 120000 }` (also see `timeout` below)
 `timeout` | default `30000`,  amount of time (in milliseconds) that type `chrome` will wait for an operation that takes time (typically navigating to a new page) - and as a convenience for WebDriver, this will be equivalent to setting the `readTimeout` for the `httpConfig` (see above) - also see [`timeout()`](#timeout)
 `playwrightUrl` | only applies for `{ type: 'playwright', start: false }`, the [Playwright](https://playwright.dev) wire-protocol (websockets) server URL, also see [`playwrightOptions`](#playwrightoptions)
 `playwrightOptions` | optional, see [`playwrightOptions`](#playwrightoptions)
@@ -301,7 +303,7 @@ For example, once you run the [couple of Docker commands](https://opensource.zal
 * configure driver = { type: 'chromedriver', start: false, webDriverUrl: 'http://localhost:4444/wd/hub' }
 ```
 
-Note that you can add `showDriverLog: true` to the above for troubleshooting if needed. You should be able to [run tests in parallel](https://github.com/intuit/karate#parallel-execution) with ease !
+Note that you can add `showDriverLog: true` to the above for troubleshooting if needed. You should be able to [run tests in parallel](https://github.com/karatelabs/karate#parallel-execution) with ease !
 
 ## `webDriverSession`
 When targeting a W3C WebDriver implementation, either as a local executable or [Remote WebDriver](https://selenium.dev/documentation/en/remote_webdriver/remote_webdriver_client/), you can specify the JSON that will be passed as the payload to the [Create Session](https://w3c.github.io/webdriver/#new-session) API. The most important part of this payload is the [`capabilities`](https://w3c.github.io/webdriver/#capabilities). It will default to `{ browserName: '<name>' }` for convenience where `<name>` will be `chrome`, `firefox` etc.
@@ -318,10 +320,14 @@ Since it will result in the following request to the WebDriver `/session`:
 {"capabilities":{"alwaysMatch":{"browserName":"chrome"}}}
 ```
 
-But in some cases, especially when you need to talk to remote driver instances, you need to pass specific "shapes" of JSON expected by the particular implementation - or you may need to pass custom data or "extension" properties. Use the `webDriverSession` property in those cases. For example:
+But in some cases, especially when you need to talk to remote driver instances, you need to pass specific "shapes" of JSON expected by the particular implementation - or you may need to pass custom data or "extension" properties. Use the `webDriverSession` property in those cases. 
+
+> Note: `desiredCapabilities` has been deprecated and not recommended for use.
+
+For example:
 
 ```cucumber
-* def session = { capabilities: { browserName: 'chrome' }, desiredCapabilities: { browserName: 'chrome' } }
+* def session = { capabilities: { alwaysMatch: { browserName: 'chrome', 'goog:chromeOptions': { args: [ '--headless', 'window-size=1280,720' ] } } } }
 * configure driver = { type: 'chromedriver', webDriverSession: '#(session)', start: false, webDriverUrl: 'http://localhost:9515/wd/hub' }
 ```
 
@@ -341,7 +347,36 @@ Note that some capabilities such as "headless" may be possible via the command-l
 
 Also see [`driver.sessionId`](#driversessionid).
 
+
 ### Playwright
+
+Driver that leverages [Playwright](https://playwright.dev) java native APIs.
+
+To use it, add the following dependency:
+```xml
+<dependency>
+    <groupId>io.karate</groupId>
+    <artifactId>karate-playwright</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+And make sure it is declared before `io.karate:karate-core`.
+
+A server will be automatically started and made available to Karate without any extra-script. If you have one pre-started, you can still use the [`playwrightUrl`](#configure-driver) driver config.
+
+### `playwrightOptions`
+When using [Playwright](#playwright) you can omit this in which case Karate will default to Chrome (within Playwright) and the default browser window size.
+
+This can take the following keys:
+* `browserType` - defaults to `chromium`, can be set to the other [types that Playwright supports](https://playwright.dev/docs/core-concepts#browser), e.g. `firefox` and `webkit`
+* `context` - JSON which will be passed as the argument of the Playwright [`browser.newContext()`](https://playwright.dev/docs/api/class-browser#browsernewcontextoptions) call, needed typically to set the page dimensions
+* `channel` - defaults to chrome, for the `chromium` browserType, allows to specify which [flavor](https://playwright.dev/docs/browsers#google-chrome--microsoft-edge) to use
+* `installBrowsers` - defaults to `true`, whether or not all the supported browsers will be downloaded and installed by Playwright (once).  
+
+Note that there is a top-level config flag for `headless` mode. The default is: `* configure driver = { headless: false }`
+
+### Playwright Legacy
 To use [Playwright](https://playwright.dev), you need to start a Playwright server. If you have one pre-started, you need to use the [`playwrightUrl`](#configure-driver) driver config.
 
 Or you can set up an executable that can do it and log the URL to the console when the server is ready. The websocket URL will look like this: `ws://127.0.0.1:4444/0e0bd1c0bb2d4eb550d02c91046dd6e0`.
@@ -394,14 +429,6 @@ For convenience, Karate assumes by default that the executable name is `playwrig
 
 Based on the above details, you should be able to come up with a custom strategy to connect Karate to Playwright. And you can consider a [`driverTarget`](#custom-target) approach for complex needs such as using a Docker container for CI.
 
-### `playwrightOptions`
-When using [Playwright](#playwright) you can omit this in which case Karate will default to Chrome (within Playwright) and the default browser window size.
-
-This can take the following keys:
-* `browserType` - defaults to `chromium`, can be set to the other [types that Playwright supports](https://playwright.dev/docs/core-concepts#browser), e.g. `firefox` and `webkit`
-* `context` - JSON which will be passed as the argument of the Playwright [`browser.newContext()`](https://playwright.dev/docs/api/class-browser#browsernewcontextoptions) call, needed typically to set the page dimensions
-
-Note that there is a top-level config flag for `headless` mode. The default is: `* configure driver = { headless: false }`
 
 ## `configure driverTarget`
 The [`configure driver`](#configure-driver) options are fine for testing on "`localhost`" and when not in `headless` mode. But when the time comes for running your web-UI automation tests on a continuous integration server, things get interesting. To support all the various options such as Docker, headless Chrome, cloud-providers etc., Karate introduces the concept of a pluggable [`Target`](src/main/java/com/intuit/karate/driver/Target.java) where you just have to implement two methods:
@@ -422,13 +449,13 @@ public interface Target {
 
 If you use the provided `ScenarioRuntime.logger` instance in your `Target` code, any logging you perform will nicely appear in-line with test-steps in the HTML report, which is great for troubleshooting or debugging tests.
 
-Combined with Docker, headless Chrome and Karate's [parallel-execution capabilities](https://github.com/intuit/karate#parallel-execution) - this simple `start()` and `stop()` lifecycle can effectively run web UI automation tests in parallel on a single node.
+Combined with Docker, headless Chrome and Karate's [parallel-execution capabilities](https://github.com/karatelabs/karate#parallel-execution) - this simple `start()` and `stop()` lifecycle can effectively run web UI automation tests in parallel on a single node.
 
 ### `DockerTarget`
 Karate has a built-in implementation for Docker ([`DockerTarget`](src/main/java/com/intuit/karate/driver/DockerTarget.java)) that supports 2 existing Docker images out of the box:
 
 * [`justinribeiro/chrome-headless`](https://hub.docker.com/r/justinribeiro/chrome-headless/) - for Chrome "native" in [headless mode](https://developers.google.com/web/updates/2017/04/headless-chrome)
-* [`ptrthomas/karate-chrome`](#karate-chrome) - for Chrome "native" but with an option to connect to the container and view via VNC, and with video-recording
+* [`karatelabs/karate-chrome`](#karate-chrome) - for Chrome "native" but with an option to connect to the container and view via VNC, and with video-recording
 
 To use either of the above, you do this in a Karate test:
 
@@ -436,7 +463,7 @@ To use either of the above, you do this in a Karate test:
 * configure driverTarget = { docker: 'justinribeiro/chrome-headless', showDriverLog: true }
 ```
 
-Or for more flexibility, you could do this in [`karate-config.js`](https://github.com/intuit/karate#configuration) and perform conditional logic based on [`karate.env`](https://github.com/intuit/karate#switching-the-environment). One very convenient aspect of `configure driverTarget` is that *if* in-scope, it will over-ride any `configure driver` directives that exist. This means that you can have the below snippet activate *only* for your CI build, and you can leave your feature files set to point to what you would use in "dev-local" mode.
+Or for more flexibility, you could do this in [`karate-config.js`](https://github.com/karatelabs/karate#configuration) and perform conditional logic based on [`karate.env`](https://github.com/karatelabs/karate#switching-the-environment). One very convenient aspect of `configure driverTarget` is that *if* in-scope, it will over-ride any `configure driver` directives that exist. This means that you can have the below snippet activate *only* for your CI build, and you can leave your feature files set to point to what you would use in "dev-local" mode.
 
 ```javascript
 function fn() {
@@ -444,7 +471,7 @@ function fn() {
         baseUrl: 'https://qa.mycompany.com'
     };
     if (karate.env == 'ci') {
-        karate.configure('driverTarget', { docker: 'ptrthomas/karate-chrome' });
+        karate.configure('driverTarget', { docker: 'karatelabs/karate-chrome' });
     }
     return config;
 }
@@ -453,11 +480,11 @@ function fn() {
 To use the [recommended `--security-opt seccomp=chrome.json` Docker option](https://hub.docker.com/r/justinribeiro/chrome-headless/), add a `secComp` property to the `driverTarget` configuration. And if you need to view the container display via VNC, set the `vncPort` to map the port exposed by Docker.
 
 ```javascript
-karate.configure('driverTarget', { docker: 'ptrthomas/karate-chrome', secComp: 'src/test/java/chrome.json', vncPort: 5900 });
+karate.configure('driverTarget', { docker: 'karatelabs/karate-chrome', secComp: 'src/test/java/chrome.json', vncPort: 5900 });
 ```
 
 ### Custom `Target`
-If you have a custom implementation of a `Target`, you can easily [construct any custom Java class](https://github.com/intuit/karate#calling-java) and pass it to `configure driverTarget`. Here below is the equivalent of the above, done the "hard way":
+If you have a custom implementation of a `Target`, you can easily [construct any custom Java class](https://github.com/karatelabs/karate#calling-java) and pass it to `configure driverTarget`. Here below is the equivalent of the above, done the "hard way":
 
 ```javascript
 var DockerTarget = Java.type('com.intuit.karate.driver.DockerTarget');
@@ -475,14 +502,14 @@ The built-in [`DockerTarget`](src/main/java/com/intuit/karate/driver/DockerTarge
 * perform an HTTP health check to wait until we are ready to receive connections
 * and when `stop()` is called, indicate if a video recording is present (after retrieving it from the stopped container)
 
-Controlling this flow from Java can take a lot of complexity out your build pipeline and keep things cross-platform. And you don't need to line-up an assortment of shell-scripts to do all these things. You can potentially include the steps of deploying (and un-deploying) the application-under-test using this approach - but probably the top-level [JUnit test-suite](https://github.com/intuit/karate#parallel-execution) would be the right place for those.
+Controlling this flow from Java can take a lot of complexity out your build pipeline and keep things cross-platform. And you don't need to line-up an assortment of shell-scripts to do all these things. You can potentially include the steps of deploying (and un-deploying) the application-under-test using this approach - but probably the top-level [JUnit test-suite](https://github.com/karatelabs/karate#parallel-execution) would be the right place for those.
 
-If the machine where you are running Karate is not the same as your target host (e.g. a sibling Docker container or a Chrome browser in a different machine) you might need to configure `DockerTarget` with the `remoteHost` and/or `useDockerHost` properties. The `DockerTarget` implementation has an example [and you can find more details here](https://github.com/intuit/karate/pull/1603#issuecomment-846420716).
+If the machine where you are running Karate is not the same as your target host (e.g. a sibling Docker container or a Chrome browser in a different machine) you might need to configure `DockerTarget` with the `remoteHost` and/or `useDockerHost` properties. The `DockerTarget` implementation has an example [and you can find more details here](https://github.com/karatelabs/karate/pull/1603#issuecomment-846420716).
 
 Another (simple) example of a custom `Target` you can use as a reference is this one: [`karate-devicefarm-demo`](https://github.com/ptrthomas/karate-devicefarm-demo) - which demonstrates how Karate can be used to drive tests on [AWS DeviceFarm](https://docs.aws.amazon.com/devicefarm/latest/testgrid/what-is-testgrid.html). The same approach should apply to any Selenium "grid" provider such as [Zalenium](https://opensource.zalando.com/zalenium/).
 
 ### `karate-chrome`
-The [`karate-chrome`](https://hub.docker.com/r/ptrthomas/karate-chrome) Docker is an image created from scratch, using a Java / Maven image as a base and with the following features:
+The [`karate-chrome`](https://hub.docker.com/r/karatelabs/karate-chrome) Docker is an image created from scratch, using a Java / Maven image as a base and with the following features:
 
 * Chrome in "full" mode (non-headless)
 * [Chrome DevTools protocol](https://chromedevtools.github.io/devtools-protocol/) exposed on port 9222
@@ -493,18 +520,18 @@ The [`karate-chrome`](https://hub.docker.com/r/ptrthomas/karate-chrome) Docker i
 To try this or especially when you need to investigate why a test is not behaving properly when running within Docker, these are the steps:
 
 * start the container:
-  * `docker run --name karate --rm -p 9222:9222 -p 5900:5900 -e KARATE_SOCAT_START=true --cap-add=SYS_ADMIN ptrthomas/karate-chrome`
+  * `docker run --name karate --rm -p 9222:9222 -p 5900:5900 -e KARATE_SOCAT_START=true --cap-add=SYS_ADMIN karatelabs/karate-chrome`
   * it is recommended to use [`--security-opt seccomp=chrome.json`](https://hub.docker.com/r/justinribeiro/chrome-headless/) instead of `--cap-add=SYS_ADMIN`
 * point your VNC client to `localhost:5900` (password: `karate`)
   * for example on a Mac you can use this command: `open vnc://localhost:5900`
 * run a test using the following [`driver` configuration](#configure-driver), and this is one of the few times you would ever need to set the [`start` flag](#configure-driver) to `false`
   * `* configure driver = { type: 'chrome', start: false, showDriverLog: true }`
-* you can even use the [Karate VS Code extension](https://github.com/intuit/karate/wiki/IDE-Support#vs-code-karate-plugin) to debug and step-through a test
+* you can even use the [Karate VS Code extension](https://github.com/karatelabs/karate/wiki/IDE-Support#vs-code-karate-plugin) to debug and step-through a test
 * if you omit the `--rm` part in the start command, after stopping the container, you can dump the logs and video recording using this command (here `.` stands for the current working folder, change it if needed):
   * `docker cp karate:/tmp .`
   * this would include the `stderr` and `stdout` logs from Chrome, which can be helpful for troubleshooting
 
-For more information on the Docker containers for Karate and how to use them, refer to the wiki: [Docker](https://github.com/intuit/karate/wiki/Docker).
+For more information on the Docker containers for Karate and how to use them, refer to the wiki: [Docker](https://github.com/karatelabs/karate/wiki/Docker).
 
 ## Driver Types
 The recommendation is that you prefer `chrome` for development, and once you have the tests running smoothly - you can switch to a different WebDriver implementation.
@@ -525,7 +552,7 @@ type | default port | default executable | description
 [`ios`](https://github.com/appium/appium/) | 4723 |`appium` | iOS automation via [Appium](https://github.com/appium/appium/)
 
 # Distributed Testing
-Karate can split a test-suite across multiple machines or Docker containers for execution and aggregate the results. Please refer to the wiki: [Distributed Testing](https://github.com/intuit/karate/wiki/Distributed-Testing).
+Karate can split a test-suite across multiple machines or Docker containers for execution and aggregate the results. Please refer to the wiki: [Distributed Testing](https://github.com/karatelabs/karate/wiki/Distributed-Testing).
 
 # Locators
 The standard locator syntax is supported. For example for web-automation, a `/` prefix means XPath and else it would be evaluated as a "CSS selector".
@@ -640,8 +667,11 @@ One reason why you would need `near()` is because an `<input>` field may either 
  * near('{}Go to Page One').click()
 ```
 
+# Visual Testing
+See [`compareImage`](https://github.com/karatelabs/karate#compare-image).
+
 # Keywords
-Only one keyword sets up UI automation in Karate, typically by specifying the URL to open in a browser. And then you would use the built-in [`driver`](#syntax) JS object for all other operations, combined with Karate's [`match`](https://github.com/intuit/karate#prepare-mutate-assert) syntax for assertions where needed.
+Only one keyword sets up UI automation in Karate, typically by specifying the URL to open in a browser. And then you would use the built-in [`driver`](#syntax) JS object for all other operations, combined with Karate's [`match`](https://github.com/karatelabs/karate#prepare-mutate-assert) syntax for assertions where needed.
 
 ## `driver`
 Navigates to a new page / address. If this is the first instance in a test, this step also initializes the [`driver`](#syntax) instance for all subsequent steps - using what is [configured](#configure-driver).
@@ -650,13 +680,13 @@ Navigates to a new page / address. If this is the first instance in a test, this
 Given driver 'https://github.com/login'
 ```
 
-And yes, you can use [variable expressions](https://github.com/intuit/karate#karate-expressions) from [`karate-config.js`](https://github.com/intuit/karate#configuration). For example:
+And yes, you can use [variable expressions](https://github.com/karatelabs/karate#karate-expressions) from [`karate-config.js`](https://github.com/karatelabs/karate#configuration). For example:
 
 ```cucumber
 * driver webUrlBase + '/page-01'
 ```
 
-> As seen above, you don't have to force all your steps to use the `Given`, `When`, `Then` BDD convention, and you can [just use "`*`" instead](https://github.com/intuit/karate#given-when-then).
+> As seen above, you don't have to force all your steps to use the `Given`, `When`, `Then` BDD convention, and you can [just use "`*`" instead](https://github.com/karatelabs/karate#given-when-then).
 
 ### `driver` JSON
 A variation where the argument is JSON instead of a URL / address-string, used typically if you are testing a desktop (or mobile) application. This example is for Windows, and you can provide the `app`, `appArguments` and other parameters expected by the [WinAppDriver](https://github.com/Microsoft/WinAppDriver) via the [`webDriverSession`](#webdriversession). For example:
@@ -679,7 +709,7 @@ This design is so that you can use (and data-drive) all the capabilities support
 # Syntax
 The built-in `driver` JS object is where you script UI automation. It will be initialized only after the [`driver`](#driver) keyword has been used to navigate to a web-page (or application).
 
-You can refer to the [Java interface definition](src/main/java/com/intuit/karate/driver/Driver.java) of the `driver` object to better understand what the various operations are. Note that `Map<String, Object>` [translates to JSON](https://github.com/intuit/karate#type-conversion), and JavaBean getters and setters translate to JS properties - e.g. `driver.getTitle()` becomes `driver.title`.
+You can refer to the [Java interface definition](src/main/java/com/intuit/karate/driver/Driver.java) of the `driver` object to better understand what the various operations are. Note that `Map<String, Object>` [translates to JSON](https://github.com/karatelabs/karate#type-conversion), and JavaBean getters and setters translate to JS properties - e.g. `driver.getTitle()` becomes `driver.title`.
 
 ## Methods
 As a convenience, *all* the methods on the `driver` have been injected into the context as special (JavaScript) variables so you can omit the "`driver.`" part and save a lot of typing. For example instead of:
@@ -726,17 +756,17 @@ For example, to [`retry()`](#retry) until an HTML element is present and then [`
 * retry().click('#someId')
 ```
 
-Or to [wait until a button is enabled](#waituntilenabled) using the default retry configuration:
+Or to [wait until a button is enabled](#waitForEnabled) using the default retry configuration:
 
 ```cucumber
-# waitUntilEnabled() returns an "Element" instance
-* waitUntilEnabled('#someBtn').click()
+# waitForEnabled() returns an "Element" instance
+* waitForEnabled('#someBtn').click()
 ```
 
 Or to temporarily [over-ride the retry configuration](#retry) *and* wait:
 
 ```cucumber
-* retry(5, 10000).waitUntilEnabled('#someBtn').click()
+* retry(5, 10000).waitForEnabled('#someBtn').click()
 ```
 
 Or to move the [mouse()](#mouse) to a given `[x, y]` co-ordinate *and* perform a click:
@@ -871,24 +901,24 @@ So instead of this, which uses [`submit()`](#submit):
 
 ```cucumber
 Given driver 'https://google.com'
-And input('input[name=q]', 'karate dsl')
+And input('textarea[name=q]', 'karate dsl')
 When submit().click('input[name=btnI]')
-Then match driver.url == 'https://github.com/intuit/karate'
+Then match driver.url == 'https://github.com/karatelabs/karate'
 ```
 
-You can do this. Note that `waitForUrl()` will also act as an assertion, so you don't have to do an extra [`match`](https://github.com/intuit/karate#match).
+You can do this. Note that `waitForUrl()` will also act as an assertion, so you don't have to do an extra [`match`](https://github.com/karatelabs/karate#match).
 
 ```cucumber
 Given driver 'https://google.com'
-And input('input[name=q]', 'karate dsl')
+And input('textarea[name=q]', 'karate dsl')
 When click('input[name=btnI]')
-And waitForUrl('https://github.com/intuit/karate')
+And waitForUrl('https://github.com/karatelabs/karate')
 ```
 
 And you can even [chain](#chaining) a [`retry()`](#retry) before the `waitForUrl()` if you know that it is going to take a long time:
 
 ```cucumber
-And retry(5, 10000).waitForUrl('https://github.com/intuit/karate')
+And retry(5, 10000).waitForUrl('https://github.com/karatelabs/karate')
 ```
 
 ### `waitFor()` instead of `submit()`
@@ -899,7 +929,7 @@ Here is an example of waiting for a search box to appear after a [`click()`](#cl
 ```cucumber
 When click('{a}Find File')
 And def search = waitFor('input[name=query]')
-Then match driver.url == 'https://github.com/intuit/karate/find/master'
+Then match driver.url == 'https://github.com/karatelabs/karate/find/master'
 Given search.input('karate-logo.png')
 ```
 
@@ -996,7 +1026,7 @@ Since moving the mouse is a common task, these short-cuts can be used:
 ```cucumber
 * mouse('#menuItem32').click()
 * mouse(100, 200).go()
-* waitUntilEnabled('#someBtn').mouse().click()
+* waitForEnabled('#someBtn').mouse().click()
 ```
 
 These are useful in situations where the "normal" [`click()`](#click) does not work - especially when the element you are clicking is not a normal hyperlink (`<a href="">`) or `<button>`.
@@ -1007,6 +1037,8 @@ The rare need to "double-click" is supported as a `doubleClick()` method:
 * mouse('#myBtn').doubleClick()
 ```
 
+Note that you can chain `mouse()` off an [`Element`](#chaining) which can be really convenient. Refer to the section on handling [drop downs](#drop-downs) for an example.
+
 ## `close()`
 Close the page / tab.
 
@@ -1014,7 +1046,7 @@ Close the page / tab.
 Closes the browser. You normally *never* need to use this in a test, Karate will close the browser automatically after a `Scenario` unless the `driver` instance was created before entering the `Scenario`.
 
 ## `html()`
-Get the [`outerHTML`](https://developer.mozilla.org/en-US/docs/Web/API/Element/outerHTML), so will include the markup of the selected element. Useful for [`match contains`](https://github.com/intuit/karate#match-contains) assertions. Example:
+Get the [`outerHTML`](https://developer.mozilla.org/en-US/docs/Web/API/Element/outerHTML), so will include the markup of the selected element. Useful for [`match contains`](https://github.com/karatelabs/karate#match-contains) assertions. Example:
 
 ```cucumber
 And match html('#eg01DivId') == '<div id="eg01DivId">this div is outside the iframe</div>'
@@ -1161,7 +1193,7 @@ But what is most useful is how you can now *click only if element exists*. As yo
 * if (exists('#elusivePopup')) click('#elusiveButton')
 ```
 
-And yes, you *can* use an [`if` statement in Karate](https://github.com/intuit/karate#conditional-logic) !
+And yes, you *can* use an [`if` statement in Karate](https://github.com/karatelabs/karate#conditional-logic) !
 
 Note that the `optional()`, `exists()` and `locate()` APIs are a little different from the other `Element` actions, because they will *not* honor any intent to [`retry()`](#retry) and *immediately* check the HTML for the given locator. This is important because they are designed to answer the question: "*does the element exist in the HTML page __right now__ ?*"
 
@@ -1172,7 +1204,7 @@ If all you need to do is check whether an element exists and fail the test if it
 ## `exists()`
 This method returns a boolean (`true` or `false`), perfect for asserting if an element exists and giving you the option to perform conditional logic, or manually fail the test.
 
-Note that there is a [`karate.fail()`](https://github.com/intuit/karate#karate-fail) API that may be handy when you want to fail a test after advanced / conditional checks.
+Note that there is a [`karate.fail()`](https://github.com/karatelabs/karate#karate-fail) API that may be handy when you want to fail a test after advanced / conditional checks.
 
 And also note that instead of using the `match` keyword, you can use [`karate.match()`](https://stackoverflow.com/a/50350442/143475) for very advanced conditional checks.
 
@@ -1255,8 +1287,10 @@ Then match searchResults contains 'karate-core/src/main/resources/karate-logo.pn
 
 The above logic can actually be replaced with Karate's built-in short-cut - which is [`waitForResultCount()`](#waitforresultcount) Also see [waits](#wait-api).
 
+Also see [Loop Until](#loop-until).
+
 ## Function Composition
-The above example can be re-factored in a very elegant way as follows, using Karate's [native support for JavaScript](https://github.com/intuit/karate#javascript-functions):
+The above example can be re-factored in a very elegant way as follows, using Karate's [native support for JavaScript](https://github.com/karatelabs/karate#javascript-functions):
 
 ```cucumber
 # this can be a global re-usable function !
@@ -1272,7 +1306,7 @@ And def searchFunction =
   """
 ```
 
-The great thing here is that the `innnerText()` function can be defined in a [common feature](https://github.com/intuit/karate#multiple-functions-in-one-file) which all your scripts can re-use. You can see how it can be re-used anywhere to scrape the contents out of *any* HTML tabular data, and all you need to do is supply the [locator](#locators) that matches the elements you are interested in.
+The great thing here is that the `innnerText()` function can be defined in a [common feature](https://github.com/karatelabs/karate#multiple-functions-in-one-file) which all your scripts can re-use. You can see how it can be re-used anywhere to scrape the contents out of *any* HTML tabular data, and all you need to do is supply the [locator](#locators) that matches the elements you are interested in.
 
 Also see [Karate vs the Browser](#karate-vs-the-browser).
 
@@ -1280,17 +1314,17 @@ Also see [Karate vs the Browser](#karate-vs-the-browser).
 For tests that need to wait for slow pages or deal with un-predictable element load-times or state / visibility changes, Karate allows you to *temporarily* tweak the internal retry settings. Here are the few things you need to know.
 
 ### Retry Defaults
-The [default retry settings](https://github.com/intuit/karate#retry-until) are:
+The [default retry settings](https://github.com/karatelabs/karate#retry-until) are:
 * `count`: 3, `interval`: 3000 milliseconds (try three times, and wait for 3 seconds before the next re-try attempt)
 * it is recommended that you stick to these defaults, which should suffice for most applications
-* if you really want, you can change this "globally" in [`karate-config.js`](https://github.com/intuit/karate#configuration) like this:
+* if you really want, you can change this "globally" in [`karate-config.js`](https://github.com/karatelabs/karate#configuration) like this:
   * `configure('retry', { count: 10, interval: 5000 });`
 * or *any time* within a script (`*.feature` file) like this:
   * `* configure retry = { count: 10, interval: 5000 }`
 
 ### Retry Actions
 By default, all actions such as [`click()`](#click) will *not* be re-tried - and this is what you would stick to most of the time, for tests that run smoothly and *quickly*. But some troublesome parts of your flow *will* require re-tries, and this is where the `retry()` API comes in. There are 3 forms:
-* `retry()` - just signals that the *next* action will be re-tried if it fails, using the [currently configured retry settings](https://github.com/intuit/karate#retry-until)
+* `retry()` - just signals that the *next* action will be re-tried if it fails, using the [currently configured retry settings](https://github.com/karatelabs/karate#retry-until)
 * `retry(count)` - the next action will *temporarily* use the `count` provided, as the limit for retry-attempts
 * `retry(count, interval)` - *temporarily* change the retry `count` *and* retry `interval` (in milliseconds) for the next action
 
@@ -1338,6 +1372,12 @@ To avoid problems, stick to the pattern of using double-quotes to "wrap" the Jav
 * script("console.log('hello world')")
 ```
 
+But note that you can always "escape" a quote if needed, using back-slashes:
+
+```cucumber
+* script("console.log('I\\'ve been logged')")
+```
+
 A more useful variation is to perform a JavaScript `eval` on a reference to the HTML DOM element retrieved by a [locator](#locators). For example:
 
 ```cucumber
@@ -1368,7 +1408,7 @@ For an advanced example of simulating a drag and drop operation see [this answer
 Also see the plural form [`scriptAll()`](#scriptall).
 
 ## `scriptAll()`
-Just like [`script()`](#script), but will perform the script `eval()` on *all* matching elements (not just the first) - and return the results as a JSON array / list. This is very useful for "bulk-scraping" data out of the HTML (such as `<table>` rows) - which you can then proceed to use in [`match`](https://github.com/intuit/karate#match) assertions:
+Just like [`script()`](#script), but will perform the script `eval()` on *all* matching elements (not just the first) - and return the results as a JSON array / list. This is very useful for "bulk-scraping" data out of the HTML (such as `<table>` rows) - which you can then proceed to use in [`match`](https://github.com/karatelabs/karate#match) assertions:
 
 ```cucumber
 # get text for all elements that match css selector
@@ -1412,7 +1452,7 @@ Note that `locate()` will fail the test if the element was not found. Think of i
 See also [`locateAll()`](#locateall).
 
 ## `locateAll()`
-This will return *all* elements that match the [locator](#locator) as a list of [`Element`](src/main/java/com/intuit/karate/driver/Element.java) instances. You can now use Karate's [core API](https://github.com/intuit/karate#the-karate-object) and call [chained](#chaining) methods. Here are some examples:
+This will return *all* elements that match the [locator](#locator) as a list of [`Element`](src/main/java/com/intuit/karate/driver/Element.java) instances. You can now use Karate's [core API](https://github.com/karatelabs/karate#the-karate-object) and call [chained](#chaining) methods. Here are some examples:
 
 ```cucumber
 # find all elements with the text-content "Click Me"
@@ -1422,7 +1462,7 @@ This will return *all* elements that match the [locator](#locator) as a list of 
 * match elements[3].script('_.tagName') == 'BUTTON'
 ```
 
-Take a look at how to [loop and transform](https://github.com/intuit/karate#json-transforms) data for more ideas.
+Take a look at how to [loop](#looping) and [transform](https://github.com/karatelabs/karate#json-transforms) data for more ideas.
 
 ### `locateAll()` with filter
 `locateAll()` can take a second argument which has to be a JavaScript "predicate" function, that returns a boolean `true` or `false`. This is very useful to "filter" the results that match a desired condition - typically a text comparison.
@@ -1472,7 +1512,7 @@ When cookie(myCookie)
 Then match driver.cookies contains '#(^myCookie)'
 ```
 
-> Note that you can do the above as a one-liner like this: `* cookie({ name: 'hello', value: 'world' })`, just keep in mind here that then it would follow the rules of [Enclosed JavaScript](https://github.com/intuit/karate#enclosed-javascript) (not [Embedded Expressions](https://github.com/intuit/karate#embedded-expressions))
+> Note that you can do the above as a one-liner like this: `* cookie({ name: 'hello', value: 'world' })`, just keep in mind here that then it would follow the rules of [Enclosed JavaScript](https://github.com/karatelabs/karate#enclosed-javascript) (not [Embedded Expressions](https://github.com/karatelabs/karate#embedded-expressions))
 
 ### Hybrid Tests
 
@@ -1488,10 +1528,10 @@ If you need to set cookies *before* the target URL is loaded, you can start off 
 
 This is very useful for "hybrid" tests. Since Karate combines API testing capabilities, you can sign-in to your SSO store via a REST end-point, and then drop cookies onto the browser so that you can bypass the user log-in experience. This can be a huge time-saver !
 
-Note that the API call (or the routine that gets the required data) can be made to run only once for the whole test-suite using [`karate.callSingle()`](https://github.com/intuit/karate#hooks).
+Note that the API call (or the routine that gets the required data) can be made to run only once for the whole test-suite using [`karate.callSingle()`](https://github.com/karatelabs/karate#hooks).
 
 ## `cookie()`
-Get a cookie by name. Note how Karate's [`match`](https://github.com/intuit/karate#match) syntax comes in handy.
+Get a cookie by name. Note how Karate's [`match`](https://github.com/karatelabs/karate#match) syntax comes in handy.
 
 ```cucumber
 * def cookie1 = { name: 'foo', value: 'bar' }
@@ -1529,10 +1569,11 @@ There are two forms. The first takes a single boolean argument - whether to "acc
 * dialog(true, 'some text')
 ```
 
-Also works as a "getter" to retrieve the text of the currently visible dialog:
+## `driver.dialogText`
+After using [`dialog()`](#dialog) you can retrieve the text of the currently visible dialog:
 
 ```cucumber
-* match driver.dialog == 'Please enter your name:'
+* match driver.dialogText == 'Please enter your name:'
 ```
 
 ## `switchPage()`
@@ -1576,7 +1617,7 @@ When switchFrame(null)
 ## `screenshot()`
 There are two forms, if a [locator](#locators) is provided - only that HTML element will be captured, else the entire browser viewport will be captured. This method returns a byte array.
 
-This will also do automatically perform a [`karate.embed()`](https://github.com/intuit/karate#karate-embed) - so that the image appears in the HTML report.
+This will also do automatically perform a [`karate.embed()`](https://github.com/karatelabs/karate#karate-embed) - so that the image appears in the HTML report.
 
 ```cucumber
 * screenshot()
@@ -1592,6 +1633,14 @@ If you want to disable the "auto-embedding" into the HTML report, pass an additi
 * screenshot('#someDiv', false)
 ```
 
+The call to `screenshot()` returns a Java byte-array, which is convenient if you want to do something specific such as save it to a file. The usage of [`karate.write()`](https://stackoverflow.com/a/54593057/143475) here is just an example, you can use [JS or Java interop](https://github.com/karatelabs/karate#calling-javascript-functions) as needed.
+
+```cucumber
+* def bytes = screenshot(false)
+* def file = karate.write(bytes, 'test.png')
+* print 'screenshot saved to:', file
+```
+
 ## `pdf()`
 To create paginated pdf document from the page loaded.
 
@@ -1601,7 +1650,7 @@ To create paginated pdf document from the page loaded.
 ```
 
 ## `highlight()`
-To visually highlight an element in the browser, especially useful when working in the [debugger](https://github.com/intuit/karate/wiki/IDE-Support#vs-code-karate-plugin). Uses the [configured `highlightDuration`](#configure-driver).
+To visually highlight an element in the browser, especially useful when working in the [debugger](https://github.com/karatelabs/karate/wiki/IDE-Support#vs-code-karate-plugin). Uses the [configured `highlightDuration`](#configure-driver).
 
 ```cucumber
 * highlight('#eg01DivId')
@@ -1652,8 +1701,86 @@ This can be convenient in some cases, for example as an alternative to [Friendly
 
 Also note that [`locate()`](#locate) and [`locateAll()`](#locateall) can be called *on* an [`Element`](#chaining), so that the "search scope" is limited to that `Element` and it's children.
 
+# Looping
+
+Looping over data is easy in Karate because of the natural way in which you can [loop over JS arrays](https://stackoverflow.com/a/76091034/143475). And the API for UI testing is designed to return arrays, for example [`scriptAll()`](#scriptall) and [`locateAll()`](#locateall) turn out to be very useful.
+
+For example, if you had a list of rows shown on the screen, and you wanted to click on all of them, you could do this:
+
+```cucumber
+* def rows = locateAll('.my-table tr button')
+* rows.forEach(row => row.click())
+```
+
+If you wanted to do multiple actions per iteration of the loop, refer to the example for [handling drop downs](#drop-downs).
+
+## Loop Until
+A different kind of loop is when you need to perform an action *until* no more data exists. This is where the [`waitUntil()`](#waituntilfunction) API comes in handy.
+
+```cucumber
+* def delete = 
+"""
+function() {
+  if (!exists('.border-bottom div')) {
+    return true;
+  }
+  click('.text-end button');
+}
+"""
+* waitUntil(delete)
+```
+
+How this works is as long as the function does not return a value, `waitUntil()` will loop. The `click('.text-end button')` is deleting the first row of records in the HTML. So the code above very neatly performs the loop and also exits the loop when there are no more records, and that is why we have the check for `!exists('.border-bottom div')`.
+
+# Drop Downs
+
+This section exists here in the documentation because it is a frequently asked question, and most drop-down "select" experiences in the wild are powered by JavaScript which makes it harder. These are cases where [`select`](#select) will not work. Instead, most JS-powered drop-down components can be handled by using [`mouse()`](#mouse).
+
+For example, consider this HTML which is using [Bootstrap](https://getbootstrap.com):
+
+```html
+    <div class="dropdown">
+      <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        Dropdown button
+      </button>
+      <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="#">First</a></li>
+        <li><a class="dropdown-item" href="#">Second</a></li>
+        <li><a class="dropdown-item" href="#">Third</a></li>
+      </ul>
+    </div>
+```
+
+The way to handle this is in two steps, first to click on the button to show the list of items, and then to click on one of the items:
+
+```cucumber
+* mouse('button').click()
+* mouse('a.dropdown-item').click()
+```
+
+## Looping Over Elements
+
+In the above example, what if we wanted to [loop over each drop-down item](#looping) and select each one. Here's how we can do it. Note how we can have multiple actions within the loop.
+
+```cucumber
+* def list = locateAll('a.dropdown-item')
+* def fun =
+"""
+function(e) {
+    mouse('button').click();
+    e.mouse().click();
+    delay(2000);
+}
+"""
+* list.forEach(fun)
+```
+
+Note how we could chain the `mouse()` method off an [`Element`](#chaining) instance, which is really convenient.
+
+For the full working expanded example that shows all the concepts you need for looping over elements and handling drop-downs, refer to [this example](../karate-e2e-tests/src/test/java/driver/99_bootstrap.feature) and the [corresponding HTML](../karate-e2e-tests/src/test/java/driver/html/99_bootstrap.html).
+
 # Debugging
-You can use the [Visual Studio Karate entension](https://github.com/intuit/karate/wiki/IDE-Support#vs-code-karate-plugin) for stepping through and debugging a test. You can see a [demo video here](https://twitter.com/KarateDSL/status/1167533484560142336). We recommend that you get comfortable with this because it is going to save you lots of time. And creating tests may actually turn out to be fun !
+You can use the [Visual Studio Karate entension](https://github.com/karatelabs/karate/wiki/IDE-Support#vs-code-karate-plugin) for stepping through and debugging a test. You can see a [demo video here](https://twitter.com/KarateDSL/status/1167533484560142336). We recommend that you get comfortable with this because it is going to save you lots of time. And creating tests may actually turn out to be fun !
 
 When you are in a hurry, you can pause a test in the middle of a flow just to look at the browser developer tools to see what CSS selectors you need to use. For this you can use [`karate.stop()`](../#karate-stop) - but of course, *NEVER* forget to remove this before you move on to something else !
 
@@ -1672,9 +1799,9 @@ in a new terminal (or open the URL in a web-browser) to proceed ...
 In most IDE-s, you would even see the URL above as a clickable hyperlink, so just clicking it would end the `stop()`. This is really convenient in "dev-local" mode. The integer port argument is mandatory and you have to choose one that is not being used.
 
 # Code Reuse
-You will often need to move steps (for e.g. a login flow) into a common feature that can be called from multiple test-scripts. When using a browser-driver, a [`call` in "shared scope"](https://github.com/intuit/karate#shared-scope) *has* to be used. This means:
+You will often need to move steps (for e.g. a login flow) into a common feature that can be called from multiple test-scripts. When using a browser-driver, a [`call` in "shared scope"](https://github.com/karatelabs/karate#shared-scope) *has* to be used. This means:
 
-* a single driver instance is used for any [`call`-s](https://github.com/intuit/karate#call), even if nested
+* a single driver instance is used for any [`call`-s](https://github.com/karatelabs/karate#call), even if nested
 * even if the driver is instantiated (using the [`driver`](#driver) keyword) within a "called" feature - it will remain in the context after the `call` returns
 
 A typical pattern will look like this:
@@ -1707,7 +1834,7 @@ Scenario:
 There are many ways to parameterize the driver config or perform environment-switching, read [this](https://stackoverflow.com/a/60581024/143475) for more details.
 
 
-Note [`callonce`](https://github.com/intuit/karate#callonce) is not supported for a `driver` instance. Separate `Scenario`-s that can run in parallel are encouraged. If you really want a long-running flow that combines steps from multiple features, you can make a `call` to each of them from the single "top-level" `Scenario`.
+Note [`callonce`](https://github.com/karatelabs/karate#callonce) is not supported for a `driver` instance. Separate `Scenario`-s that can run in parallel are encouraged. If you really want a long-running flow that combines steps from multiple features, you can make a `call` to each of them from the single "top-level" `Scenario`.
 
 ```cucumber
 Feature: main
@@ -1720,14 +1847,43 @@ Scenario:
 * call read('another.feature@someTag')
 ```
 
-Best-practice would be to implement [Hybrid Tests](#hybrid-tests) where the values for the auth-cookies are set only once for the whole test-suite using [`karate.callSingle()`](https://github.com/intuit/karate#hooks).
+Best-practice would be to implement [Hybrid Tests](#hybrid-tests) where the values for the auth-cookies are set only once for the whole test-suite using [`karate.callSingle()`](https://github.com/karatelabs/karate#hooks).
+
+Also see [Looping Over Elements](#looping-over-elements).
+
+## JavaScript Function Reuse
+
+As described in the section above on [Methods](#methods) - functions on the `driver` object will be auto-injected as variables, but the important thing to note is that this will happen only *after* the driver is instantiated via the [`driver`](#driver) keyword.
+
+If you need to wrap a sequence of UI actions into a re-usable unit, JavaScript is convenient. A good example of doing this in the section on [Looping Over Elements](#loop-until). Here, the function is declared in-line, and after the `driver` was instantiated.
+
+But if you wanted to take JS function re-use to the next-level, you may choose to keep them in a separate file and follow the pattern described [here](https://github.com/karatelabs/karate#multiple-functions-in-one-file). If this common feature file is called before the `driver` is initialized, you will need to modify the JS code to:
+* get the `driver` instance using [`karate.get()`](https://github.com/karatelabs/karate#karate-get). 
+* and call methods on the `driver` instance (instead of directly)
+
+Here is an example:
+
+```cucumber
+* def deleteFirstRow = 
+"""
+function() {
+  var driver = karate.get('driver');
+  if (!driver.exists('.border-bottom div')) {
+    return true;
+  }
+  driver.click('.text-end button');
+}
+"""
+```
+
+You can compare the above with the example in the section on [Looping Over Elements](#loop-until) to appreciate the difference.
 
 # Locator Lookup
 Other UI automation frameworks spend a lot of time encouraging you to follow a so-called "[Page Object Model](https://martinfowler.com/bliki/PageObject.html)" for your tests. The Karate project team is of the opinion that things can be made simpler.
 
 One indicator of a *good* automation framework is how much *work* a developer needs to do in order to perform any automation action - such as clicking a button, or retrieving the value of some HTML object / property. In Karate - these are typically *one-liners*. And especially when it comes to test-automation, we have found that attempts to apply patterns in the pursuit of code re-use, more often than not - results in hard-to-maintain code, and severely impacts *readability*.
 
-That said, there is some benefit to re-use of just [locators](#locators) and Karate's support for [JSON](https://github.com/intuit/karate#json) and [reading files](https://github.com/intuit/karate#reading-files) turns out to be a great way to achieve [DRY](https://en.wikipedia.org/wiki/Don't_repeat_yourself)-ness in tests. Here is one suggested pattern you can adopt.
+That said, there is some benefit to re-use of just [locators](#locators) and Karate's support for [JSON](https://github.com/karatelabs/karate#json) and [reading files](https://github.com/karatelabs/karate#reading-files) turns out to be a great way to achieve [DRY](https://en.wikipedia.org/wiki/Don't_repeat_yourself)-ness in tests. Here is one suggested pattern you can adopt.
 
 First, you can maintain a JSON "map" of your application locators. It can look something like this. Observe how you can mix different [locator types](#locators), because they are all just string-values that behave differently depending on whether the first character is a "`/`" (XPath), "`{}`" ([wildcard](#wildcard-locators)), or not (CSS). Also note that this is *pure JSON* which means that you have excellent IDE support for syntax-coloring, formatting, indenting, and ensuring well-formed-ness. And you can have a "nested" heirarchy, which means you can neatly "name-space" your locator reference look-ups - as you will see later below.
 
@@ -1751,15 +1907,15 @@ First, you can maintain a JSON "map" of your application locators. It can look s
 }
 ```
 
-Karate has [great options for re-usability](https://github.com/intuit/karate#calling-other-feature-files), so once the above JSON is saved as `locators.json`, you can do this in a `common.feature`:
+Karate has [great options for re-usability](https://github.com/karatelabs/karate#calling-other-feature-files), so once the above JSON is saved as `locators.json`, you can do this in a `common.feature`:
 
 ```cucumber
 * call read 'locators.json'
 ```
 
-This looks deceptively simple, but what happens is very interesting. It will inject all top-level "keys" of the JSON file into the Karate "context" as global [variables](https://github.com/intuit/karate#def). In normal programming languages, global variables are a *bad thing*, but for test-automation (when you know what you are doing) - this can be *really* convenient.
+This looks deceptively simple, but what happens is very interesting. It will inject all top-level "keys" of the JSON file into the Karate "context" as global [variables](https://github.com/karatelabs/karate#def). In normal programming languages, global variables are a *bad thing*, but for test-automation (when you know what you are doing) - this can be *really* convenient.
 
-> For those who are wondering how this works behind the scenes, since `read` refers to the [`read()`](https://github.com/intuit/karate#reading-files) function, the behavior of [`call`](https://github.com/intuit/karate#calling-javascript-functions) is that it will *invoke* the function *and* use what comes after it as the solitary function argument. And this `call` is using [shared scope](https://github.com/intuit/karate#shared-scope).
+> For those who are wondering how this works behind the scenes, since `read` refers to the [`read()`](https://github.com/karatelabs/karate#reading-files) function, the behavior of [`call`](https://github.com/karatelabs/karate#calling-javascript-functions) is that it will *invoke* the function *and* use what comes after it as the solitary function argument. And this `call` is using [shared scope](https://github.com/karatelabs/karate#shared-scope).
 
 So now you have `testAccounts`, `leftNav` and `transactions` as variables, and you have a nice "name-spacing" of locators to refer to - within your different feature files:
 
@@ -1775,7 +1931,7 @@ So now you have `testAccounts`, `leftNav` and `transactions` as variables, and y
 And this is how you can have all your locators defined in one place and re-used across multiple tests. You can experiment for yourself (probably depending on the size of your test-automation team) if this leads to any appreciable benefits, because the down-side is that you need to keep switching between 2 files - when writing and maintaining tests.
 
 # Intercepting HTTP Requests
-You can selectively re-direct some HTTP requests that the browser makes - into a [Karate test-double](https://github.com/intuit/karate/tree/master/karate-netty) ! This gives you some powerful options, for example you can simulate Ajax and [XHR](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest) failures, or even replace entire widgets or sections of the page with "fake" HTML. The unified use of Karate test-doubles means that you can script dynamic responses and handle incoming URL, query-string and header variations. The following scenario will make this clear.
+You can selectively re-direct some HTTP requests that the browser makes - into a [Karate test-double](https://github.com/karatelabs/karate/tree/master/karate-netty) ! This gives you some powerful options, for example you can simulate Ajax and [XHR](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest) failures, or even replace entire widgets or sections of the page with "fake" HTML. The unified use of Karate test-doubles means that you can script dynamic responses and handle incoming URL, query-string and header variations. The following scenario will make this clear.
 
 We will use this page: [`https://www.seleniumeasy.com/test/dynamic-data-loading-demo.html`](https://www.seleniumeasy.com/test/dynamic-data-loading-demo.html) - as an example. When a button on this page is clicked, a request is made to [`https://api.randomuser.me/?nat=us`](https://api.randomuser.me/?nat=us) - which returns some JSON data. That data is used to make *yet another* request to fetch a JPEG image from e.g. [`https://randomuser.me/api/portraits/women/34.jpg`](https://randomuser.me/api/portraits/women/34.jpg). Finally, the page is updated to display the first-name, last-name and the image.
 
@@ -1799,7 +1955,7 @@ Scenario:
 * def response = read('response.json')
 ```
 
-Refer to the [Karate test-doubles documentation](https://github.com/intuit/karate/tree/master/karate-netty) for details. We [configure cors = true](https://github.com/intuit/karate/tree/master/karate-netty#configure-cors) to ensure that the browser does not complain about cross-origin requests. If the request is for `/api/*`, the first `Scenario` matches - else the last one is a "catch all". Note how we can even serve an image with the right `Content-Type` header. And the returned JSON is dynamic, the `lastName` will modify [`response.json`](../karate-demo/src/test/java/driver/mock/response.json) via an [embedded-expression](https://github.com/intuit/karate#embedded-expressions).
+Refer to the [Karate test-doubles documentation](https://github.com/karatelabs/karate/tree/master/karate-netty) for details. We [configure cors = true](https://github.com/karatelabs/karate/tree/master/karate-netty#configure-cors) to ensure that the browser does not complain about cross-origin requests. If the request is for `/api/*`, the first `Scenario` matches - else the last one is a "catch all". Note how we can even serve an image with the right `Content-Type` header. And the returned JSON is dynamic, the `lastName` will modify [`response.json`](../karate-demo/src/test/java/driver/mock/response.json) via an [embedded-expression](https://github.com/karatelabs/karate#embedded-expressions).
 
 ## `driver.intercept()`
 All we need to do now is to tell Chrome to intercept some URL patterns and use the above mock-server feature-file:
@@ -1816,21 +1972,50 @@ Scenario:
 * screenshot()
 ```
 
-* `driver.intercept()` is supported only for the driver type `chrome`
+* `driver.intercept()` is fully supported only for the driver type `chrome`. [`Playwright`](#playwright) supports only [urlPatterns](https://chromedevtools.github.io/devtools-protocol/tot/Fetch/#type-RequestPattern)
 * you can route multiple URL patterns to the same Karate mock-feature, the format of each array-element under `patterns` can be found [here](https://chromedevtools.github.io/devtools-protocol/tot/Fetch/#type-RequestPattern).
   * the `*` wildcard (most likely what you need) will match any number of characters, e.g. `*myhost/some/path/*`
   * `?` will match any single character
   * `\` can be used as an "escape" character
 * `driver.intercept()` can be called only once during a `Scenario`, which means only one mock-feature can be used - but a mock-feature can have any number of `Scenario` "routes"
-* the `mock` value supports any [Karate file-reading prefix](https://github.com/intuit/karate#reading-files) such as `classpath:` 
+* the `mock` value supports any [Karate file-reading prefix](https://github.com/karatelabs/karate#reading-files) such as `classpath:` 
 * if you need to set up HTTP mocks *before* even loading the first page, you can use `about:blank` for the first URL used for the `driver` init - similar to how you can pre-set a [`cookie()`](#cookieset).
 
 The entire example can be found [here](../karate-demo/src/test/java/driver/mock/demo-01.feature) - and here is a [video](https://twitter.com/KarateDSL/status/1248996522357739521). Note how the "fake" [`response.json`](../karate-demo/src/test/java/driver/mock/response.json) is tiny compared to the "real" JSON, because we know that only a few data-elements are needed for the UI to work in this case.
 
 The Karate [regression test-suite](https://stackoverflow.com/a/66005331/143475) that runs in GitHub actions (effectively our CI) - includes another [example](../karate-e2e-tests/src/test/java/driver/05.feature), and you can find a good explanation [here](https://twitter.com/KarateDSL/status/1350743622312894466).
 
+## Inspecting Intercepted Requests
+The `driver.intercept()` API returns an object on which you can call `get(variableName)`. This comes in useful if you want to get information on what requests were intercepted. If you really want, you can write a complex mock that calls an external API, saves the response, and returns a modified response to the browser. Since you can store ["global" variables in a mock in the `Background`](https://github.com/karatelabs/karate/tree/master/karate-netty#background), you can save any arbitrary data or "state", and unpack them from your main test flow. Here is an example.
+
+First the mock. Any time we handle an incoming request, we append some JSON data to the `savedRequests` array. Note that [`requestPath`](https://github.com/karatelabs/karate/tree/master/karate-netty#requestpath) and [`requestParams`](https://github.com/karatelabs/karate/tree/master/karate-netty#requestparams) are built-in variables.
+
+```cucumber
+Feature:
+
+Background:
+* def savedRequests = []
+
+Scenario: pathMatches('/api/05')
+* savedRequests.push({ path: requestPath, params: requestParams })
+* print 'saved:', savedRequests
+* def response = { message: 'hello faked' }
+```
+
+And in the main UI test, note how we get the value of `savedRequests`, and do a normal [`match`](https://github.com/karatelabs/karate#match) on it !
+
+```cucumber
+* def mock = driver.intercept({ patterns: [{ urlPattern: '*/api/*' }], mock: '05_mock.feature' })
+
+* click('button')
+* waitForText('#containerDiv', 'hello faked')
+
+* def requests = mock.get('savedRequests')
+* match requests == [{ path: '/api/05', params: { foo: ['bar'] } }]
+```
+
 ## Intercepting All Requests
-If you use `*` as the `urlPattern` *every* request can be routed to the mock ! And if you use the following mock, it will actually act as a ["pass-through" proxy](https://github.com/intuit/karate/tree/master/karate-netty#karateproceed) - but with the advantage that every single request and response will be emitted to `target/karate.log`. You may be able to turn this into a custom "record-replay" framework, or do other interesting things. Yes, you can modify the request or response if needed !
+If you use `*` as the `urlPattern` *every* request can be routed to the mock ! And if you use the following mock, it will actually act as a ["pass-through" proxy](https://github.com/karatelabs/karate/tree/master/karate-netty#karateproceed) - but with the advantage that every single request and response will be emitted to `target/karate.log`. You may be able to turn this into a custom "record-replay" framework, or do other interesting things. Yes, you can modify the request or response if needed !
 
 ```cucumber
 @ignore
@@ -1876,10 +2061,10 @@ File-upload is supported natively only by type: `chrome`. You need to call a met
 * waitForText('#uploaded-files', 'billie.jpg')
 ```
 
-The `driver.inputFile()` can take an array or varargs as the second argument. Note how Karate is able to resolve a [relative path](https://github.com/intuit/karate#reading-files) to an actual OS file-path behind the scenes. If you want to point to a real file, use the `file:` prefix.
+The `driver.inputFile()` can take an array or varargs as the second argument. Note how Karate is able to resolve a [relative path](https://github.com/karatelabs/karate#reading-files) to an actual OS file-path behind the scenes. If you want to point to a real file, use the `file:` prefix.
 
 ## Using `multipart file`
-This is the recommended, browser-agnostic approach that uses Karate's core-competency as an HTTP API client i.e. [`multipart file`](https://github.com/intuit/karate#multipart-file).
+This is the recommended, browser-agnostic approach that uses Karate's core-competency as an HTTP API client i.e. [`multipart file`](https://github.com/karatelabs/karate#multipart-file).
 
 Here is how the example above looks like:
 
@@ -1889,12 +2074,12 @@ Here is how the example above looks like:
 * method post
 ```
 
-Validation can be performed if needed on the response to this HTTP `POST` which may be HTML, and the [`karate.extract()`](https://github.com/intuit/karate#karate-extract) API may come in useful.
+Validation can be performed if needed on the response to this HTTP `POST` which may be HTML, and the [`karate.extract()`](https://github.com/karatelabs/karate#karate-extract) API may come in useful.
 
-In real-life flows, you may need to pass cookies from the [browser](#cookie) to the [Karate HTTP client](https://github.com/intuit/karate#cookie), so that you can simulate any flows needed after this step.
+In real-life flows, you may need to pass cookies from the [browser](#cookie) to the [Karate HTTP client](https://github.com/karatelabs/karate#cookie), so that you can simulate any flows needed after this step.
 
 ## Using Karate Robot
-[Karate Robot](https://github.com/intuit/karate/tree/master/karate-robot) is designed for desktop application testing, but since you can click on anything in the viewport, you can achieve what you may not be able to with other automation frameworks. [Here](../karate-robot/src/test/java/robot/core/upload.feature) is the same example using this approach, where a couple of images need to be saved as part of the test-script:
+[Karate Robot](https://github.com/karatelabs/karate/tree/master/karate-robot) is designed for desktop application testing, but since you can click on anything in the viewport, you can achieve what you may not be able to with other automation frameworks. [Here](../karate-robot/src/test/java/robot/core/upload.feature) is the same example using this approach, where a couple of images need to be saved as part of the test-script:
 
 ```cucumber
 * driver 'http://the-internet.herokuapp.com/upload'
@@ -1924,7 +2109,7 @@ You can start a [`Driver`]() instance programmatically and perform actions and a
 
 You can find the complete example [here](../karate-e2e-tests/src/test/java/driver/JavaApiRunner.java). Also see this [explanation](https://twitter.com/KarateDSL/status/1353969718730788865).
 
-Also see the [Karate Java API](https://github.com/intuit/karate#java-api).
+Also see the [Karate Java API](https://github.com/karatelabs/karate#java-api).
 
 ## Chrome Java API
 As a convenience you can use the [`Chrome`](../karate-core/src/main/java/com/intuit/karate/driver/chrome/Chrome.java) concrete implementation of a `Driver` directly, designed for common needs such as converting HTML to PDF - or taking a screenshot of a page. Here is an [example](../karate-demo/src/test/java/driver/screenshot/ChromePdfRunner.java):
@@ -1969,6 +2154,7 @@ For more control or custom options, the `start()` method takes a `Map<String, Ob
 * `executable` - (String) path to the Chrome executable or batch file that starts Chrome
 * `headless` - (Boolean) if headless
 * `maxPayloadSize` - (Integer) defaults to 4194304 (bytes, around 4 MB), but you can override it if you deal with very large output / binary payloads
+* `useFrameAggregation` - (Boolean) defaults to `false`.  Can be enabled to aggregate multiple frames if the server sends multiple frames for a single payload.
 
 ## `driver.screenshotFull()`
 Only supported for driver type [`chrome`](#driver-types). See [Chrome Java API](#chrome-java-api). This will snapshot the entire page, not just what is visible in the viewport.

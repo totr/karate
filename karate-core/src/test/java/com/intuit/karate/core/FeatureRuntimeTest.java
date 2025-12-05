@@ -1,9 +1,6 @@
 package com.intuit.karate.core;
 
-import com.intuit.karate.Match;
-import com.intuit.karate.Results;
-import com.intuit.karate.Runner;
-import com.intuit.karate.TestUtils;
+import com.intuit.karate.*;
 import com.intuit.karate.report.Report;
 import com.intuit.karate.report.SuiteReports;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +61,18 @@ class FeatureRuntimeTest {
     }
 
     @Test
+    void testFailTag() {
+        fail = false;
+        run("fail-tag.feature");
+    }
+
+    @Test
+    void testFailTagFailure() {
+        fail = true;
+        run("fail-tag-failure.feature");
+    }
+
+    @Test
     void testFail1() {
         fail = true;
         run("fail1.feature");
@@ -94,6 +103,12 @@ class FeatureRuntimeTest {
     void testAbort() {
         run("abort.feature");
         match(fr.result.getVariables(), "{ configSource: 'normal', functionFromKarateBase: '#notnull', before: true }");
+    }
+
+    @Test
+    void testAlign() {
+        run("align.feature");
+        match(fr.result.getVariables(), "{ configSource: 'normal', functionFromKarateBase: '#notnull', text: 'hello bar world' , cats: '#notnull', myJson: {}}}");
     }
 
     @Test
@@ -164,6 +179,11 @@ class FeatureRuntimeTest {
     }
 
     @Test
+    void testEvalAssign() {
+        run("eval-assign.feature");
+    }
+
+    @Test
     void testExtract() {
         run("extract.feature");
     }
@@ -229,8 +249,23 @@ class FeatureRuntimeTest {
     }
 
     @Test
+    void testOutline() {
+        run("outline.feature");
+    }
+
+    @Test
     void testOutlineBackground() {
         run("outline-background.feature");
+    }
+
+    @Test
+    void testOutlineDynamic() {
+        run("outline-dynamic.feature");
+    }
+
+    @Test
+    void testOutlineSetupOnce() {
+        run("outline-setup-once.feature");
     }
 
     @Test
@@ -304,4 +339,95 @@ class FeatureRuntimeTest {
         run("call-jsonpath.feature");
     }
 
+    @Test
+    void testSchemaRead() {
+        run("schema-read.feature");
+    }
+
+    @Test
+    void testTypeConversion() {
+        run("type-conversion.feature");
+    }
+
+    @Test
+    void testKarateGet() {
+        run("karate-get.feature");
+    }
+
+    @Test
+    void testOutlineCsv() {
+        run("outline-csv.feature");
+    }
+
+    @Test
+    void testReadProperties() {
+        run("read-properties.feature");
+    }
+
+    @Test
+    void testCallSelf() {
+        run("call-self.feature");
+        matchContains(fr.result.getVariables(), "{ result: 'second' }");
+    }
+
+    @Test
+    void testBigDecimal() {
+        run("big-decimal.feature");
+    }
+
+    @Test
+    void testJsArrays() {
+        run("js-arrays.feature");
+    }
+
+    @Test
+    void testLowerCase() {
+        run("lower-case.feature");
+    }
+
+    @Test
+    void testNotEquals() {
+        run("not-equals.feature");
+    }
+
+    @Test
+    void testReplace() {
+        run("replace.feature");
+    }
+
+    @Test
+    void testScenarioVariableScope() {
+        run("scenario-variable-scope.feature");
+    }
+
+    @Test
+    void testSchemaLike() {
+        run("schema-like.feature");
+    }
+
+    @Test
+    void testSortArray() {
+        run("sort-array.feature");
+    } 
+    
+    @Test
+    void testTypeConv() {
+        run("type-conv.feature");
+    }
+
+    @Test
+    void testConfigureNtlmAuthentication() {
+        run("ntlm-authentication.feature");
+    }
+
+    @Test
+    void testSingleScenario() {
+        Feature feature = Feature.read("classpath:com/intuit/karate/core/single-scenario.feature");
+        FeatureCall featureCall = new FeatureCall(feature, "@Scenario2", -1, null);
+        FeatureRuntime featureRuntime = FeatureRuntime.of(new Suite(), featureCall, null);
+        featureRuntime.run();
+
+        var resultVars = featureRuntime.result.getVariables();
+        matchContains(resultVars, "{ result1: '#notpresent', result2: 'Two', result3: '#notpresent' }");
+    }
 }

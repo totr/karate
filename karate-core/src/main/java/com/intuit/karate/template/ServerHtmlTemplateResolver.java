@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,14 @@
  */
 package com.intuit.karate.template;
 
+import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.resource.Resource;
 import com.intuit.karate.resource.ResourceResolver;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.thymeleaf.IEngineConfiguration;
+import org.thymeleaf.cache.AlwaysValidCacheEntryValidity;
 import org.thymeleaf.cache.NonCacheableCacheEntryValidity;
 import org.thymeleaf.templatemode.TemplateMode;
 import org.thymeleaf.templateresolver.ITemplateResolver;
@@ -43,9 +45,11 @@ public class ServerHtmlTemplateResolver implements ITemplateResolver {
     private static final Logger logger = LoggerFactory.getLogger(ServerHtmlTemplateResolver.class);
 
     private final ResourceResolver resourceResolver;
+    private final boolean devMode;
 
-    public ServerHtmlTemplateResolver(ResourceResolver resourceResolver) {
+    public ServerHtmlTemplateResolver(ResourceResolver resourceResolver, boolean devMode) {
         this.resourceResolver = resourceResolver;
+        this.devMode = devMode;
     }
 
     @Override
@@ -60,9 +64,17 @@ public class ServerHtmlTemplateResolver implements ITemplateResolver {
 
     @Override
     public TemplateResolution resolveTemplate(IEngineConfiguration ec, String ownerTemplate, String name, Map<String, Object> templateResolutionAttributes) {
-        Resource resource = resourceResolver.resolve(name + ".html");
-        KarateTemplateResource templateResource = new KarateTemplateResource(resource);
-        return new TemplateResolution(templateResource, TemplateMode.HTML, NonCacheableCacheEntryValidity.INSTANCE); // TODO cache switch
+        if (name.startsWith("${")) {
+            JsValue jv = KarateEngineContext.get().evalLocal("`" + name + "`", true);
+            name = jv.getAsString();
+        }
+        if (!name.endsWith(".html")) {
+            name = name + ".html";
+        }        
+        Resource resource = resourceResolver.resolve(ownerTemplate, name);
+        KarateTemplateResource templateResource = new KarateTemplateResource(ownerTemplate, resource);
+        return new TemplateResolution(templateResource, TemplateMode.HTML,
+                devMode ? NonCacheableCacheEntryValidity.INSTANCE : AlwaysValidCacheEntryValidity.INSTANCE);
     }
 
 }

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@
 package com.intuit.karate;
 
 import com.intuit.karate.core.Feature;
+import com.intuit.karate.core.FeatureCall;
 import com.intuit.karate.core.FeatureResult;
 import com.intuit.karate.core.FeatureRuntime;
 import com.intuit.karate.core.RuntimeHookFactory;
@@ -31,13 +32,13 @@ import com.intuit.karate.core.ScenarioCall;
 import com.intuit.karate.driver.DriverOptions;
 import com.intuit.karate.driver.DriverRunner;
 import com.intuit.karate.http.HttpClientFactory;
-import com.intuit.karate.job.JobConfig;
 import com.intuit.karate.report.SuiteReports;
 import com.intuit.karate.resource.ResourceUtils;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
-import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -47,7 +48,7 @@ public class Runner {
 
     private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(Runner.class);
 
-    public static Map<String, Object> runFeature(Feature feature, Map<String, Object> vars, boolean evalKarateConfig) {
+    public static Map<String, Object> runFeature(FeatureCall feature, Map<String, Object> vars, boolean evalKarateConfig) {
         Suite suite = new Suite();
         FeatureRuntime featureRuntime = FeatureRuntime.of(suite, feature, vars);
         featureRuntime.caller.setKarateConfigDisabled(!evalKarateConfig);
@@ -61,7 +62,7 @@ public class Runner {
 
     public static Map<String, Object> runFeature(File file, Map<String, Object> vars, boolean evalKarateConfig) {
         Feature feature = Feature.read(file);
-        return runFeature(feature, vars, evalKarateConfig);
+        return runFeature(new FeatureCall(feature), vars, evalKarateConfig);
     }
 
     public static Map<String, Object> runFeature(Class relativeTo, String path, Map<String, Object> vars, boolean evalKarateConfig) {
@@ -70,7 +71,7 @@ public class Runner {
     }
 
     public static Map<String, Object> runFeature(String path, Map<String, Object> vars, boolean evalKarateConfig) {
-        Feature feature = FileUtils.parseFeatureAndCallTag(path);
+        FeatureCall feature = FileUtils.parseFeatureAndCallTag(path);
         return runFeature(feature, vars, evalKarateConfig);
     }
 
@@ -78,85 +79,10 @@ public class Runner {
     public static void callAsync(Runner.Builder builder, String path, Map<String, Object> arg, PerfHook perfHook) {
         builder.features = Collections.emptyList(); // will skip expensive feature resolution in builder.resolveAll()
         Suite suite = new Suite(builder);
-        Feature feature = FileUtils.parseFeatureAndCallTag(path);
+        FeatureCall feature = FileUtils.parseFeatureAndCallTag(path);
         FeatureRuntime featureRuntime = FeatureRuntime.of(suite, feature, arg, perfHook);
         featureRuntime.setNext(() -> perfHook.afterFeature(featureRuntime.result));
         perfHook.submit(featureRuntime);
-    }
-
-    //==========================================================================
-    //
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(Class<?> clazz, int threadCount) {
-        return parallel(clazz, threadCount, null);
-    }
-
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(Class<?> clazz, int threadCount, String reportDir) {
-        return builder().fromKarateAnnotation(clazz).reportDir(reportDir).parallel(threadCount);
-    }
-
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(List<String> tags, List<String> paths, int threadCount, String reportDir) {
-        return parallel(tags, paths, null, null, threadCount, reportDir);
-    }
-
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(int threadCount, String... tagsOrPaths) {
-        return parallel(null, threadCount, tagsOrPaths);
-    }
-
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(String reportDir, int threadCount, String... tagsOrPaths) {
-        List<String> tags = new ArrayList();
-        List<String> paths = new ArrayList();
-        for (String s : tagsOrPaths) {
-            s = StringUtils.trimToEmpty(s);
-            if (s.startsWith("~") || s.startsWith("@")) {
-                tags.add(s);
-            } else {
-                paths.add(s);
-            }
-        }
-        return parallel(tags, paths, threadCount, reportDir);
-    }
-
-    /**
-     * @see com.intuit.karate.Runner#builder()
-     * @deprecated
-     */
-    @Deprecated
-    public static Results parallel(List<String> tags, List<String> paths, String scenarioName,
-            List<RuntimeHook> hooks, int threadCount, String reportDir) {
-        Builder options = new Builder();
-        options.tags = tags;
-        options.paths = paths;
-        options.scenarioName = scenarioName;
-        if (hooks != null) {
-            options.hooks.addAll(hooks);
-        }
-        options.reportDir = reportDir;
-        return options.parallel(threadCount);
     }
 
     //==========================================================================
@@ -175,7 +101,7 @@ public class Runner {
         String scenarioName;
         List<String> tags;
         List<String> paths;
-        List<Feature> features;
+        List<FeatureCall> features;
         String relativeTo;
         final Collection<RuntimeHook> hooks = new ArrayList();
         RuntimeHookFactory hookFactory;
@@ -187,11 +113,11 @@ public class Runner {
         boolean outputCucumberJson;
         boolean dryRun;
         boolean debugMode;
+        boolean failWhenNoScenariosFound;
         Map<String, String> systemProperties;
         Map<String, Object> callSingleCache;
         Map<String, ScenarioCall.Result> callOnceCache;
         SuiteReports suiteReports;
-        JobConfig jobConfig;
         Map<String, DriverRunner> drivers;
 
         // synchronize because the main user is karate-gatling
@@ -221,16 +147,16 @@ public class Runner {
             b.outputCucumberJson = outputCucumberJson;
             b.dryRun = dryRun;
             b.debugMode = debugMode;
+            b.failWhenNoScenariosFound = failWhenNoScenariosFound;
             b.systemProperties = systemProperties;
             b.callSingleCache = callSingleCache;
             b.callOnceCache = callOnceCache;
             b.suiteReports = suiteReports;
-            b.jobConfig = jobConfig;
             b.drivers = drivers;
             return b;
         }
 
-        public List<Feature> resolveAll() {
+        public List<FeatureCall> resolveAll() {
             if (classLoader == null) {
                 classLoader = Thread.currentThread().getContextClassLoader();
             }
@@ -247,11 +173,26 @@ public class Runner {
             if (tempOptions != null) {
                 LOGGER.info("using system property '{}': {}", Constants.KARATE_OPTIONS, tempOptions);
                 Main ko = Main.parseKarateOptions(tempOptions);
+                if (ko.name != null) {
+                    scenarioName = ko.name;
+                }
+                if (ko.configDir != null) {
+                    configDir = ko.configDir;
+                }
+                if (ko.env != null) {
+                    env = ko.env;
+                }
+                if (ko.reportDir != null) {
+                    reportDir = ko.reportDir;
+                }
                 if (ko.tags != null) {
                     tags = ko.tags;
                 }
                 if (ko.paths != null) {
                     paths = ko.paths;
+                }
+                if (ko.threads != 0) {
+                    threadCount = ko.threads;
                 }
                 dryRun = ko.dryRun || dryRun;
             }
@@ -317,12 +258,7 @@ public class Runner {
                     paths = new ArrayList();
                     paths.add(relativeTo);
                 }
-                features = ResourceUtils.findFeatureFiles(workingDir, paths);
-            }
-            if (scenarioName != null) {
-                for (Feature feature : features) {
-                    feature.setCallName(scenarioName);
-                }
+                features = ResourceUtils.findFeatureFiles(workingDir, paths, scenarioName);
             }
             if (callSingleCache == null) {
                 callSingleCache = new HashMap();
@@ -340,20 +276,13 @@ public class Runner {
             } else {
                 drivers = DriverOptions.driverRunners();
             }
-            if (jobConfig != null) {
-                reportDir = jobConfig.getExecutorDir();
-                if (threadCount < 1) {
-                    threadCount = jobConfig.getExecutorCount();
-                }
-                timeoutMinutes = jobConfig.getTimeoutMinutes();
-            }
             if (threadCount < 1) {
                 threadCount = 1;
             }
             return features;
         }
 
-        protected T forTempUse() {
+        public T forTempUse() {
             forTempUse = true;
             return (T) this;
         }
@@ -402,25 +331,6 @@ public class Runner {
             return (T) this;
         }
 
-        /**
-         * @see com.intuit.karate.Runner#builder()
-         * @deprecated
-         */
-        @Deprecated
-        public T fromKarateAnnotation(Class<?> clazz) {
-            KarateOptions ko = clazz.getAnnotation(KarateOptions.class);
-            if (ko != null) {
-                LOGGER.warn("the @KarateOptions annotation is deprecated, please use Runner.builder()");
-                if (ko.tags().length > 0) {
-                    tags = Arrays.asList(ko.tags());
-                }
-                if (ko.features().length > 0) {
-                    paths = Arrays.asList(ko.features());
-                }
-            }
-            return relativeTo(clazz);
-        }
-
         public T path(String... value) {
             path(Arrays.asList(value));
             return (T) this;
@@ -456,7 +366,7 @@ public class Runner {
                 if (features == null) {
                     features = new ArrayList();
                 }
-                features.addAll(value);
+                features.addAll(value.stream().map(FeatureCall::new).collect(Collectors.toList()));
             }
             return (T) this;
         }
@@ -541,16 +451,21 @@ public class Runner {
             debugMode = value;
             return (T) this;
         }
+        
+        public T failWhenNoScenariosFound(boolean value) {
+            failWhenNoScenariosFound = value;
+            return (T) this;
+        }
 
         public T callSingleCache(Map<String, Object> value) {
             callSingleCache = value;
             return (T) this;
         }
-        
+
         public T callOnceCache(Map<String, ScenarioCall.Result> value) {
             callOnceCache = value;
             return (T) this;
-        }        
+        }
 
         public T suiteReports(SuiteReports value) {
             suiteReports = value;
@@ -562,15 +477,58 @@ public class Runner {
             return (T) this;
         }
 
-        public Results jobManager(JobConfig value) {
-            jobConfig = value;
-            Suite suite = new Suite(this);
-            suite.run();
-            return suite.buildResults();
+        private Integer getDebugPort() {
+            String debugPortString = StringUtils.trimToNull(System.getProperty(Constants.KARATE_DEBUG_PORT));
+            if (debugPortString == null) {
+                return null;
+            }
+            int debugPort = 0;
+            try {
+                debugPort = Integer.valueOf(debugPortString);
+            } catch (Exception e) {
+                // ignore
+            }
+            return debugPort;
+        }
+
+        private String[] getDebugArgs(int debugPort) {
+            List<String> args = new ArrayList();
+            args.add("-d");
+            args.add(debugPort + "");
+            if (reportDir != null) {
+                args.add("-r");
+                args.add(reportDir);
+            }
+            if (env != null) {
+                args.add("-e");
+                args.add(env);
+            }
+            if (tags != null) {
+                for (String tag : tags) {
+                    args.add("-t");
+                    args.add(tag);
+                }
+            }
+            if (threadCount != 1) {
+                args.add("-T");
+                args.add(threadCount + "");
+            }
+            if (paths != null) {
+                args.addAll(paths);
+            }
+            return args.toArray(new String[]{});
         }
 
         public Results parallel(int threadCount) {
             threads(threadCount);
+            Integer debugPort = getDebugPort();
+            if (debugPort != null && !debugMode) {
+                String[] args = getDebugArgs(debugPort);
+                if (systemProperties != null) {
+                    systemProperties.forEach((k, v) -> System.setProperty(k, v));
+                }
+                return Main.startDebugServer(args);
+            }
             Suite suite = new Suite(this);
             suite.run();
             return suite.buildResults();

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,15 +24,21 @@
 package com.intuit.karate.http;
 
 import com.intuit.karate.FileUtils;
+import com.intuit.karate.JsonUtils;
+import com.intuit.karate.Match;
+import com.intuit.karate.core.Variable;
 import com.intuit.karate.graal.JsArray;
 import com.intuit.karate.graal.JsEngine;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.graal.Methods;
+import com.intuit.karate.resource.Resource;
 import com.intuit.karate.template.KarateEngineContext;
 import com.intuit.karate.template.TemplateUtils;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
+import java.io.File;
 import java.io.InputStream;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -44,6 +50,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.proxy.ProxyObject;
 import org.slf4j.Logger;
@@ -63,23 +70,42 @@ public class ServerContext implements ProxyObject {
     private static final String EVAL = "eval";
     private static final String EVAL_WITH = "evalWith";
     private static final String GET = "get";
+    private static final String SET = "set";
+    private static final String LOG = "log";
     private static final String UUID = "uuid";
     private static final String REMOVE = "remove";
+    private static final String REDIRECT = "redirect";
     private static final String SWITCH = "switch";
     private static final String SWITCHED = "switched";
     private static final String AJAX = "ajax";
     private static final String HTTP = "http";
+    private static final String NEXT_ID = "nextId";
+    private static final String SESSION_ID = "sessionId";
+    private static final String INIT = "init";
+    private static final String CLOSE = "close";
+    private static final String CLOSED = "closed";
     private static final String RENDER = "render";
-    private static final String TRIGGER = "trigger";
-    private static final String REDIRECT = "redirect";
-    private static final String AFTER_SETTLE = "afterSettle";
+    private static final String BODY_APPEND = "bodyAppend";
+    private static final String COPY = "copy";
+    private static final String DELAY = "delay";
+    private static final String TO_STRING = "toString";
     private static final String TO_JSON = "toJson";
+    private static final String TO_JS = "toJs";
     private static final String TO_JSON_PRETTY = "toJsonPretty";
     private static final String FROM_JSON = "fromJson";
+    private static final String CALLER = "caller";
+    private static final String TEMPLATE = "template";
+    private static final String TYPE_OF = "typeOf";
+    private static final String IS_PRIMITIVE = "isPrimitive";
+    private static final String IS_JSON = "isJson";
+    private static final String MATCH = "match";
+    private static final String JOIN_PATHS = "joinPaths";
+    private static final String FLASH = "flash";
 
     private static final String[] KEYS = new String[]{
-        READ, RESOLVER, READ_AS_STRING, EVAL, EVAL_WITH, GET, UUID, REMOVE, SWITCH, SWITCHED, AJAX, HTTP,
-        RENDER, TRIGGER, REDIRECT, AFTER_SETTLE, TO_JSON, TO_JSON_PRETTY, FROM_JSON};
+        READ, RESOLVER, READ_AS_STRING, EVAL, EVAL_WITH, GET, SET, LOG, UUID, REMOVE, REDIRECT, SWITCH, SWITCHED, AJAX, HTTP, NEXT_ID, SESSION_ID,
+        INIT, CLOSE, CLOSED, RENDER, BODY_APPEND, COPY, DELAY, TO_STRING, TO_JSON, TO_JS, TO_JSON_PRETTY, FROM_JSON,
+        CALLER, TEMPLATE, TYPE_OF, IS_PRIMITIVE, IS_JSON, MATCH, JOIN_PATHS, FLASH};
     private static final Set<String> KEY_SET = new HashSet(Arrays.asList(KEYS));
     private static final JsArray KEY_ARRAY = new JsArray(KEYS);
 
@@ -88,13 +114,19 @@ public class ServerContext implements ProxyObject {
 
     private boolean stateless;
     private boolean api;
+    private boolean httpGetAllowed;
     private boolean lockNeeded;
-    private Session session;
+    private boolean newSession;
+    private Session session; // can be pre-resolved, else will be set by RequestCycle.init()
     private boolean switched;
+    private boolean closed;
+    private int nextId;
 
-    private List<Map<String, Object>> responseTriggers;
-    private List<String> afterSettleScripts;
     private final Map<String, Object> variables;
+    private Object flash;
+    private String redirectPath;
+    private List<String> bodyAppends;
+    private Function<ServerContext, Boolean> requestValidator;
 
     public ServerContext(ServerConfig config, Request request) {
         this(config, request, null);
@@ -114,8 +146,7 @@ public class ServerContext implements ProxyObject {
         };
         RENDER_FUNCTION = o -> {
             if (o instanceof String) {
-                JsEngine je = RequestCycle.get().getEngine();
-                return TemplateUtils.renderResourcePath((String) o, je, config.getResourceResolver());
+                return TemplateUtils.renderHtmlResource((String) o, getEngine(), config.getResourceResolver(), config.isDevMode());
             }
             Map<String, Object> map;
             if (o instanceof Map) {
@@ -124,73 +155,52 @@ public class ServerContext implements ProxyObject {
                 logger.warn("invalid argument to render: {}", o);
                 return null;
             }
-            Map<String, Object> templateVars = (Map) map.get("variables");
+            Map<String, Object> vars = (Map) map.get("vars");
             String path = (String) map.get("path");
-            if (path != null) {
-                JsEngine je;
-                if (templateVars == null) {
-                    je = RequestCycle.get().getEngine();
-                } else {
-                    je = JsEngine.local();
-                    je.putAll(templateVars);
-                }
-                return TemplateUtils.renderResourcePath(path, je, config.getResourceResolver());
-            }
             String html = (String) map.get("html");
-            if (html == null) {
-                logger.warn("invalid argument to render, path or html needed: {}", map);
+            Boolean fork = (Boolean) map.get("fork");
+            Boolean append = (Boolean) map.get("append");
+            if (path == null && html == null) {
+                logger.warn("invalid argument to render, 'path' or 'html' needed: {}", map);
                 return null;
             }
             JsEngine je;
-            if (templateVars == null) {
-                je = RequestCycle.get().getEngine();
-            } else {
+            if (fork != null && fork) {
                 je = JsEngine.local();
-                je.putAll(templateVars);
+            } else {
+                je = getEngine().copy();
             }
-            return TemplateUtils.renderHtmlString(html, je, config.getResourceResolver());
+            if (vars != null) {
+                je.putAll(vars);
+            }
+            String body;
+            if (path != null) {
+                body = TemplateUtils.renderHtmlResource(path, je, config.getResourceResolver(), config.isDevMode());
+            } else {
+                body = TemplateUtils.renderHtmlString(html, je, config.getResourceResolver());
+            }
+            if (append != null && append) {
+                bodyAppend(body);
+            }
+            return body;
         };
     }
 
-    private static final String DOT_JS = ".js";
-
-    public void prepare() {
+    public boolean setApiIfPathStartsWith(String prefix) {
         String path = request.getPath();
-        if (request.getResourceType() == null) {
-            request.setResourceType(ResourceType.fromFileExtension(path));
-        }
-        String resourcePath = request.getResourcePath();
-        if (resourcePath == null) {
-            if (api) {
-                String pathParam = null;
-                String jsPath = path + DOT_JS;
-                resourcePath = jsPath;
-                if (!config.getJsFiles().contains(jsPath)) {
-                    List<String> pathParams = new ArrayList();
-                    request.setPathParams(pathParams);
-                    String temp = path;
-                    do {
-                        int pos = temp.lastIndexOf('/');
-                        if (pos == -1) {
-                            logger.debug("failed to extract path params: {} - {}", temp, this);
-                            break;
-                        }
-                        String pp = temp.substring(pos + 1);
-                        if (pathParams.isEmpty()) {
-                            pathParam = pp;
-                        }
-                        pathParams.add(pp);
-                        jsPath = temp.substring(0, pos) + DOT_JS;
-                        temp = temp.substring(0, pos);
-                    } while (!config.getJsFiles().contains(jsPath));
-                    resourcePath = jsPath;
-                }
-                request.setPathParam(pathParam);
-            } else { // static, note that HTML is resolved differently, by template resolver
-                resourcePath = path;
+        if (path.startsWith(prefix)) {
+            api = true;
+            int length = prefix.length();
+            int pos = path.indexOf('/', length);
+            if (pos != -1) {
+                request.setResourcePath(path.substring(0, pos) + ".js");
+            } else {
+                request.setResourcePath(path + ".js");
             }
-            request.setResourcePath(resourcePath);
+            request.setPath(path.substring(length - 1));
+            return true;
         }
+        return false;
     }
 
     public String getSessionCookieValue() {
@@ -210,6 +220,17 @@ public class ServerContext implements ProxyObject {
     }
 
     public String readAsString(String resource) {
+        if (resource.startsWith(Resource.THIS_COLON)) {
+            resource = resource.substring(Resource.THIS_COLON.length());
+            if (resource.charAt(0) != '/') {
+                resource = "/" + resource;
+            }
+            String path = request.getResourcePath();
+            int pos = path.lastIndexOf('/');
+            if (pos != -1) {
+                resource = path.substring(0, pos) + resource;
+            }
+        }
         InputStream is = config.getResourceResolver().resolve(resource).getStream();
         return FileUtils.toString(is);
     }
@@ -220,17 +241,22 @@ public class ServerContext implements ProxyObject {
         if (resourceType == ResourceType.JS) {
             return eval(raw);
         } else {
-            return JsValue.fromString(raw, false, resourceType);
+            return JsValue.fromJava(JsonUtils.fromString(raw, false, resourceType));
         }
     }
 
+    private JsEngine getEngine() {
+        KarateEngineContext kec = KarateEngineContext.get();
+        return kec == null ? RequestCycle.get().getEngine() : kec.getJsEngine();
+    }
+
     public Object eval(String source) {
-        return RequestCycle.get().getEngine().evalForValue(source);
+        return getEngine().evalForValue(source);
     }
 
     public Object evalWith(Object o, String source) {
         Value value = Value.asValue(o);
-        return RequestCycle.get().getEngine().evalWith(value, source, true);
+        return getEngine().evalWith(value, source, true);
     }
 
     public String toJson(Object o) {
@@ -238,9 +264,14 @@ public class ServerContext implements ProxyObject {
         return new JsValue(value).toJsonOrXmlString(false);
     }
 
+    public Object toJs(Object o) {
+        return JsValue.fromJava(o);
+    }
+
     public String toJsonPretty(Object o) {
         Value value = Value.asValue(o);
-        return new JsValue(value).toJsonOrXmlString(true);
+        String pretty = new JsValue(value).toJsonOrXmlString(true);
+        return pretty == null ? null : pretty.trim();
     }
 
     public ServerConfig getConfig() {
@@ -253,6 +284,17 @@ public class ServerContext implements ProxyObject {
 
     public Map<String, Object> getVariables() {
         return variables;
+    }
+
+    public boolean isNewSession() {
+        return newSession;
+    }
+
+    public void init() {
+        long now = Instant.now().getEpochSecond();
+        long expires = now + config.getSessionExpirySeconds();
+        session = config.getSessionStore().create(now, expires);
+        newSession = true;
     }
 
     public Session getSession() {
@@ -291,26 +333,48 @@ public class ServerContext implements ProxyObject {
         this.api = api;
     }
 
-    public List<String> getAfterSettleScripts() {
-        return afterSettleScripts;
+    public boolean isClosed() {
+        return closed;
     }
 
-    public List<Map<String, Object>> getResponseTriggers() {
-        return responseTriggers;
+    public boolean isHttpGetAllowed() {
+        return httpGetAllowed;
     }
 
-    public void trigger(Map<String, Object> trigger) {
-        if (responseTriggers == null) {
-            responseTriggers = new ArrayList();
+    public void setHttpGetAllowed(boolean httpGetAllowed) {
+        this.httpGetAllowed = httpGetAllowed;
+    }
+
+    public void setRequestValidator(Function<ServerContext, Boolean> requestValidator) {
+        this.requestValidator = requestValidator;
+    }
+
+    public Function<ServerContext, Boolean> getRequestValidator() {
+        return requestValidator;
+    }    
+
+    public boolean isSwitched() {
+        return switched;
+    }
+
+    public String getRedirectPath() {
+        return redirectPath;
+    }
+
+    public List<String> getBodyAppends() {
+        return bodyAppends;
+    }
+
+    public void bodyAppend(String body) {
+        if (bodyAppends == null) {
+            bodyAppends = new ArrayList();
         }
-        responseTriggers.add(trigger);
+        bodyAppends.add(body);
     }
 
-    public void afterSettle(String js) {
-        if (afterSettleScripts == null) {
-            afterSettleScripts = new ArrayList();
-        }
-        afterSettleScripts.add(js);
+    public void log(Object... args) {
+        String log = new LogWrapper(args).toString();
+        logger.info(log);
     }
 
     private final Methods.FunVar GET_FUNCTION = args -> {
@@ -319,37 +383,97 @@ public class ServerContext implements ProxyObject {
         }
         String name = args[0].toString();
         KarateEngineContext kec = KarateEngineContext.get();
-        if (args.length == 1) {
-            return kec.getVariable(name);
-        }
-        if (kec.containsVariable(name)) {
-            return kec.getVariable(name);
+        Object value;
+        if (kec != null && kec.containsVariable(name)) {
+            value = kec.getVariable(name);
         } else {
-            return args[1];
+            JsEngine je = getEngine();
+            if (je.bindings.hasMember(name)) {
+                value = je.get(name).getValue();
+            } else if (args.length > 1) {
+                value = args[1];
+            } else {
+                value = null;
+            }
         }
+        return value;
     };
-    
+
+    private Void setVariable(String name, Object value) {
+        getEngine().put(name, value);
+        return null;
+    }
+
     private static final Supplier<String> UUID_FUNCTION = () -> java.util.UUID.randomUUID().toString();
-    private static final Function<String, Object> FROM_JSON_FUNCTION = s -> JsValue.fromString(s, false, null);
+    private static final Function<String, Object> FROM_JSON_FUNCTION = s -> JsonUtils.fromString(s, false, null);
 
     private final Methods.FunVar HTTP_FUNCTION; // set in constructor
-    private final Function<Object, String> RENDER_FUNCTION; // set in constructor
+    private final Function<Object, String> RENDER_FUNCTION; // set in constructor  
 
-    private final Consumer<String> SWITCH_FUNCTION = s -> {
-        if (switched) {
-            logger.warn("context.switch() can be called only once during a request, ignoring: {}", s);
-        } else {
-            switched = true;
-            RequestCycle.get().setSwitchTemplate(s);
-            KarateEngineContext.get().setRedirect(true);
-            throw new RedirectException(s);
+    private final Methods.FunVar LOG_FUNCTION = args -> {
+        log(args);
+        return null;
+    };
+
+    private final Function<Object, Object> COPY_FUNCTION = o -> {
+        return JsValue.fromJava(JsonUtils.deepCopy(o));
+    };
+
+    private final Consumer<Number> DELAY_FUNCTION = v -> {
+        try {
+            Thread.sleep(v.longValue());
+        } catch (Exception e) {
+            logger.error("delay failed: {}", e.getMessage());
         }
     };
 
-    private final Consumer<String> REDIRECT_FUNCTION = s -> {
-        RequestCycle.get().setRedirectPath(s);
-        KarateEngineContext.get().setRedirect(true);
-        throw new RedirectException(s);
+    private final Function<Object, Object> TO_STRING_FUNCTION = o -> {
+        Variable v = new Variable(o);
+        return v.getAsString();
+    };
+
+    private final Methods.FunVar SWITCH_FUNCTION = args -> {
+        if (switched) {
+            logger.warn("context.switch() can be called only once during a request, ignoring: {}", args[0]);
+        } else {
+            switched = true; // flag for request cycle render
+            KarateEngineContext.get().setRedirect(true); // flag for template engine
+            RequestCycle rc = RequestCycle.get();
+            if (args.length > 1) {
+                Value value = Value.asValue(args[1]);
+                if (value.hasMembers()) {
+                    JsValue jv = new JsValue(value);
+                    rc.setSwitchParams(jv.getAsMap());
+                }
+            }
+            String template;
+            if (args.length > 0) {
+                template = args[0].toString();
+                rc.setSwitchTemplate(template);
+            } else {
+                template = null;
+            }
+            throw new RedirectException(template);
+        }
+        return null;
+    };
+
+    private final Supplier<String> CLOSE_FUNCTION = () -> {
+        closed = true;
+        return null;
+    };
+
+    private final Supplier<Object> INIT_FUNCTION = () -> {
+        init();
+        getEngine().put(RequestCycle.SESSION, session.getData());
+        logger.debug("init session: {}", session);
+        return null;
+    };
+
+    private final Function<String, Object> REDIRECT_FUNCTION = (path) -> {
+        redirectPath = path;
+        logger.debug("redirect requested to: {}", redirectPath);
+        return null;
     };
 
     private static final BiFunction<Object, Object, Object> REMOVE_FUNCTION = (o, k) -> {
@@ -369,6 +493,32 @@ public class ServerContext implements ProxyObject {
         return o;
     };
 
+    private final Supplier<String> NEXT_ID_FUNCTION = () -> ++nextId + "-" + System.currentTimeMillis();
+
+    private final Function<String, Object> TYPE_OF_FUNCTION = o -> new Variable(o).getTypeString();
+
+    private final Function<Object, Object> IS_PRIMITIVE_FUNCTION = o -> !new Variable(o).isMapOrList();
+
+    private final Function<Object, Object> IS_JSON_FUNCTION = o -> new Variable(o).isMapOrList();
+
+    private final Methods.FunVar MATCH_FUNCTION = args -> {
+        if (args.length > 2 && args[0] != null) {
+            String type = args[0].toString();
+            Match.Type matchType = Match.Type.valueOf(type.toUpperCase());
+            return JsValue.fromJava(Match.execute(getEngine(), matchType, args[1], args[2], false));
+        } else if (args.length == 2) {
+            return JsValue.fromJava(Match.execute(getEngine(), Match.Type.EQUALS, args[0], args[1], false));
+        } else {
+            logger.warn("at least two arguments needed for match");
+            return null;
+        }
+    };
+
+    private final Methods.FunVar JOIN_PATHS_FUNCTION = args -> {
+        List<String> temp = Arrays.asList(args).stream().filter(x -> x != null).map(Object::toString).collect(Collectors.toList());
+        return String.join(File.separator, temp);
+    };
+
     @Override
     public Object getMember(String key) {
         switch (key) {
@@ -382,16 +532,30 @@ public class ServerContext implements ProxyObject {
                 return (BiFunction<Object, String, Object>) this::evalWith;
             case GET:
                 return GET_FUNCTION;
+            case SET:
+                return (BiFunction<String, Object, Void>) this::setVariable;
+            case LOG:
+                return LOG_FUNCTION;
             case UUID:
                 return UUID_FUNCTION;
+            case COPY:
+                return COPY_FUNCTION;
+            case DELAY:
+                return DELAY_FUNCTION;
+            case TO_STRING:
+                return TO_STRING_FUNCTION;
             case TO_JSON:
                 return (Function<Object, String>) this::toJson;
+            case TO_JS:
+                return (Function<Object, Object>) this::toJs;
             case TO_JSON_PRETTY:
                 return (Function<Object, String>) this::toJsonPretty;
             case FROM_JSON:
                 return FROM_JSON_FUNCTION;
             case REMOVE:
                 return REMOVE_FUNCTION;
+            case REDIRECT:
+                return REDIRECT_FUNCTION;
             case SWITCH:
                 return SWITCH_FUNCTION;
             case SWITCHED:
@@ -400,16 +564,38 @@ public class ServerContext implements ProxyObject {
                 return isAjax();
             case HTTP:
                 return HTTP_FUNCTION;
+            case NEXT_ID:
+                return NEXT_ID_FUNCTION;
+            case SESSION_ID:
+                return session == null ? null : session.getId();
+            case INIT:
+                return INIT_FUNCTION;
+            case CLOSE:
+                return CLOSE_FUNCTION;
+            case CLOSED:
+                return closed || session == null || session.isTemporary();
             case RENDER:
                 return RENDER_FUNCTION;
-            case TRIGGER:
-                return (Consumer<Map<String, Object>>) this::trigger;
-            case REDIRECT:
-                return REDIRECT_FUNCTION;
+            case BODY_APPEND:
+                return (Consumer<String>) this::bodyAppend;
             case RESOLVER:
                 return config.getResourceResolver();
-            case AFTER_SETTLE:
-                return (Consumer<String>) this::afterSettle;
+            case CALLER:
+                return KarateEngineContext.get().getCallerTemplateName();
+            case TEMPLATE:
+                return KarateEngineContext.get().getTemplateName();
+            case TYPE_OF:
+                return TYPE_OF_FUNCTION;
+            case IS_PRIMITIVE:
+                return IS_PRIMITIVE_FUNCTION;
+            case IS_JSON:
+                return IS_JSON_FUNCTION;
+            case MATCH:
+                return MATCH_FUNCTION;
+            case JOIN_PATHS:
+                return JOIN_PATHS_FUNCTION;
+            case FLASH:
+                return flash;
             default:
                 logger.warn("no such property on context object: {}", key);
                 return null;
@@ -428,7 +614,34 @@ public class ServerContext implements ProxyObject {
 
     @Override
     public void putMember(String key, Value value) {
-        logger.warn("put not supported on context object: {} - {}", key, value);
+        switch (key) {
+            case FLASH:
+                flash = JsValue.toJava(value);
+                break;
+            default:
+                logger.warn("put not supported on context object: {} - {}", key, value);
+        }
+    }
+
+    static class LogWrapper { // TODO code duplication with ScenarioBridge
+
+        final Object[] values;
+
+        LogWrapper(Object... values) {
+            // sometimes a null array gets passed in, graal weirdness
+            this.values = values == null ? new Value[0] : values;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+            for (Object v : values) {
+                Variable var = new Variable(v);
+                sb.append(var.getAsPrettyString()).append(' ');
+            }
+            return sb.toString();
+        }
+
     }
 
 }

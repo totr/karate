@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,11 +39,12 @@ public class Signer {
 public static void sign(String token, Map<String, String> params) {
         List<String> list = new ArrayList();
         String tokenClientSlat = "";
-        for (String key : params.keySet()) {
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            String key = entry.getKey();
             if (key.equals("token_client_salt")) {
-                tokenClientSlat = params.get(key);
+                tokenClientSlat = entry.getValue();
             }
-            String paramString = key + "=" + params.get(key);
+            String paramString = key + "=" + entry.getValue();
             list.add(paramString);
         }
         Collections.sort(list);

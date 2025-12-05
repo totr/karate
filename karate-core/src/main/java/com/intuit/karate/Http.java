@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@ package com.intuit.karate;
 
 import com.intuit.karate.core.ScenarioEngine;
 import com.intuit.karate.core.Variable;
+import com.intuit.karate.http.HttpClientFactory;
 import com.intuit.karate.http.HttpRequestBuilder;
 import com.intuit.karate.http.Response;
 import java.util.Map;
@@ -49,13 +50,18 @@ public class Http {
 
     private Http(String urlBase) {
         this.urlBase = urlBase;
-        engine = ScenarioEngine.forTempUse();
+        engine = ScenarioEngine.forTempUse(HttpClientFactory.DEFAULT);
         builder = engine.getRequestBuilder();
         builder.url(urlBase);
     }
 
     public Http url(String url) {
         builder.url(url);
+        return this;
+    }
+    
+    public Http param(String key, String ... values) {
+        builder.param(key, values);
         return this;
     }
 
@@ -69,15 +75,20 @@ public class Http {
         return this;
     }
 
-    public Response method(String method, Object body) {
+    public Http hook(RuntimeHook hook) {
+        builder.hook(hook);
+        return this;
+    }
+
+    public Response method(String method, Object body) {        
         if (body != null) {
-            builder.body(body);
+            builder.body(body instanceof Json ? ((Json) body).value() : body);
         }
         builder.method(method);
         Response response = engine.httpInvoke();
         if (response.getStatus() >= 400) {
             engine.logger.warn("http response code: {}, response: {}, request: {}",
-                    response.getStatus(), response.getBodyAsString(), engine.getRequest());
+                    response.getStatus(), response.getBodyAsString(), engine.getHttpRequest());
         }
         return response;
     }
@@ -85,19 +96,30 @@ public class Http {
     public Response method(String method) {
         return method(method, null);
     }
+    
+    public Response methodJson(String method, String body) {
+        return method(method, Json.of(body));
+    }    
 
     public Response get() {
         return method("get");
     }
 
     public Response postJson(String body) {
-        Json json = Json.of(body);
-        return post(json.value());
+        return post(Json.of(body));
     }
 
     public Response post(Object body) {
-        return method("post", body instanceof Json ? ((Json) body).value() : body);
+        return method("post", body);
     }
+    
+    public Response put(Object body) {
+        return method("put", body);
+    }   
+    
+    public Response putJson(String body) {
+        return put(Json.of(body));
+    }    
 
     public Response delete() {
         return method("delete");

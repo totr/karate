@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,6 +50,7 @@ public class FeatureResult {
 
     private Map<String, Object> resultVariables;
     private Map<String, Object> callArg;
+    private Config config;
     private int loopIndex = -1;
     private int callDepth;
 
@@ -60,9 +61,6 @@ public class FeatureResult {
 
     public void printStats() {
         String featureName = feature.getResource().getPrefixedPath();
-        if (feature.getCallLine() != -1) {
-            featureName = featureName + ":" + feature.getCallLine();
-        }
         StringBuilder sb = new StringBuilder();
         sb.append("---------------------------------------------------------\n");
         sb.append("feature: ").append(featureName).append('\n');
@@ -72,7 +70,7 @@ public class FeatureResult {
     }
 
     public List<File> getAllEmbedFiles() {
-        List<File> files = new ArrayList();
+        List<File> files = new ArrayList<>();
         for (ScenarioResult sr : scenarioResults) {
             for (StepResult stepResult : sr.getStepResults()) {
                 if (stepResult.getEmbeds() != null) {
@@ -107,7 +105,7 @@ public class FeatureResult {
     }
 
     public Map<String, Object> toInfoJson() {
-        Map<String, Object> map = new HashMap();
+        Map<String, Object> map = new HashMap<>();
         map.put("name", feature.getName());
         map.put("description", feature.getDescription());
         map.put("prefixedPath", feature.getResource().getPrefixedPath());
@@ -120,7 +118,7 @@ public class FeatureResult {
     }
 
     public Map<String, Object> toSummaryJson() {
-        Map<String, Object> map = new HashMap();
+        Map<String, Object> map = new HashMap<>();
         map.put("failed", isFailed());
         map.put("name", feature.getName());
         map.put("description", feature.getDescription());
@@ -134,7 +132,7 @@ public class FeatureResult {
     }
 
     public Map<String, Object> toKarateJson() {
-        Map<String, Object> map = new HashMap();
+        Map<String, Object> map = new HashMap<>();
         // these first few are only for the ease of reports
         // note that they are not involved in the reverse fromKarateJson()
         map.put("name", feature.getName());
@@ -150,7 +148,7 @@ public class FeatureResult {
         }
         map.put("resultDate", resultDate);
         map.put("prefixedPath", feature.getResource().getPrefixedPath());
-        List<Map<String, Object>> list = new ArrayList(scenarioResults.size());
+        List<Map<String, Object>> list = new ArrayList<>(scenarioResults.size());
         map.put("scenarioResults", list);
         for (ScenarioResult sr : scenarioResults) {
             list.add(sr.toKarateJson());
@@ -165,7 +163,7 @@ public class FeatureResult {
     }
 
     public Map<String, Object> toCucumberJson() {
-        Map<String, Object> map = new HashMap();
+        Map<String, Object> map = new HashMap<>();
         map.put("keyword", Feature.KEYWORD);
         map.put("line", feature.getLine());
         map.put("uri", displayName);
@@ -179,7 +177,7 @@ public class FeatureResult {
         if (feature.getTags() != null) {
             map.put("tags", ScenarioResult.tagsToCucumberJson(feature.getTags()));
         }
-        List<Map<String, Object>> list = new ArrayList(scenarioResults.size());
+        List<Map<String, Object>> list = new ArrayList<>(scenarioResults.size());
         map.put("elements", list);
         for (ScenarioResult sr : scenarioResults) {
             Map<String, Object> backgroundMap = sr.backgroundToCucumberJson();
@@ -192,7 +190,7 @@ public class FeatureResult {
     }
 
     public List<StepResult> getAllScenarioStepResultsNotHidden() {
-        List<StepResult> list = new ArrayList();
+        List<StepResult> list = new ArrayList<>();
         for (ScenarioResult sr : scenarioResults) {
             list.addAll(sr.getStepResultsNotHidden());
         }
@@ -288,7 +286,7 @@ public class FeatureResult {
     }
 
     public List<String> getErrors() {
-        List<String> errors = new ArrayList();
+        List<String> errors = new ArrayList<>();
         for (ScenarioResult sr : scenarioResults) {
             if (sr.isFailed()) {
                 errors.add(sr.getErrorMessage());
@@ -306,7 +304,16 @@ public class FeatureResult {
     }
 
     public Map<String, Object> getVariables() {
-        return resultVariables;
+        // edge case if no scenarios were run
+        return resultVariables == null ? new HashMap<>() : resultVariables;
+    }
+
+    public void setConfig(Config config) {
+        this.config = config;
+    }
+
+    public Config getConfig() {
+        return config;
     }
 
     public void sortScenarioResults() {

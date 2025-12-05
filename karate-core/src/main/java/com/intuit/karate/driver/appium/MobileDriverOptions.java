@@ -1,3 +1,26 @@
+/*
+ * The MIT License
+ *
+ * Copyright 2022 Karate Labs Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
 package com.intuit.karate.driver.appium;
 
 import com.intuit.karate.core.ScenarioRuntime;
@@ -23,8 +46,7 @@ public class MobileDriverOptions extends DriverOptions {
     public boolean isWebSession() {
         // flag to know if driver runs for browser on mobile
         Map<String, Object> sessionPayload = super.getWebDriverSessionPayload();
-        Map<String, Object> desiredCapabilities = (Map<String, Object>) sessionPayload.get("desiredCapabilities");
-        return  (desiredCapabilities.get("browserName") != null) ? true : false;
+        return getBrowserName(sessionPayload) != null;
     }
 
     @Override
@@ -88,4 +110,29 @@ public class MobileDriverOptions extends DriverOptions {
         }
     }
 
+    protected static String getBrowserName(Map<String, Object> sessionPayload) {
+        // get browserName from capabilities or desiredCapabilities node
+        Map<String, Object> capabilities = (Map<String, Object>) sessionPayload.get("capabilities");
+        Map<String, Object> desiredCapabilities = (Map<String, Object>) sessionPayload.get("desiredCapabilities");
+
+        if (capabilities != null) {
+            if (capabilities.containsKey("firstMatch")) {
+                // sauce labs uses the firstMatch node for some reason
+                // see https://support.saucelabs.com/hc/en-us/articles/4412359870231-Migrating-Appium-Real-Device-Tests-to-W3C
+                List<Map<String, Object>> firstMatch = (List<Map<String, Object>>) capabilities.get("firstMatch");
+                if (firstMatch.size() == 0) {
+                    throw new RuntimeException("firstMatch node in webdriver session is empty");
+                }
+                return (String) firstMatch.get(0).get("browserName");
+            } else {
+                return (String) capabilities.get("browserName");
+            }
+        } else if (desiredCapabilities != null) {
+            return (String) desiredCapabilities.get("browserName");
+        } else {
+            // no browserName found
+            return null;
+        }
+
+    }
 }

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,27 +29,19 @@ import com.intuit.karate.JsonUtils;
 import com.intuit.karate.KarateException;
 import com.intuit.karate.ScenarioActions;
 import com.intuit.karate.StringUtils;
-import cucumber.api.java.en.When;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.StringJoiner;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author pthomas3
  */
 public class StepRuntime {
+
+    private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(StepRuntime.class);
 
     private StepRuntime() {
         // only static methods
@@ -63,6 +55,7 @@ public class StepRuntime {
         final String keyword;
 
         MethodPattern(Method method, String regex) {
+            String keyword1;
             this.regex = regex;
             this.method = method;
             try {
@@ -72,7 +65,11 @@ public class StepRuntime {
             }
 
             // assuming all @When or @Action start with a ^, get the first word
-            keyword = regex.substring(1).split(" ")[0];
+            keyword1 = regex.substring(1).split(" |\\\\h|\\\\s")[0];
+            if (keyword1.endsWith("$")) { // if ends with $ most likely it's a doc string (i.e. the """ for multiline strings)
+                keyword1 = keyword1.substring(0, keyword1.length() - 1);
+            }
+            keyword = keyword1;
         }
 
         List<String> match(String text) {
@@ -199,23 +196,18 @@ public class StepRuntime {
                 String regex = when.value();
                 MethodPattern methodPattern = new MethodPattern(method, regex);
                 temp.put(regex, methodPattern);
-
-                Collection<Method> keywordMethods = KEYWORDS_METHODS.computeIfAbsent(methodPattern.keyword, k -> new HashSet<>());
+                // edge case for eval() method it's mean to match anything in a line e.g. waitFor('#stuff')
+                // regex is ([\w]+)([^\s^\w])(.+)
+                String keyword = method.getName().equalsIgnoreCase("eval") ? "eval" : methodPattern.keyword;
+                Collection<Method> keywordMethods = KEYWORDS_METHODS.computeIfAbsent(keyword, k -> new HashSet<>());
                 keywordMethods.add(methodPattern.method);
-            } else {
-                Action action = method.getDeclaredAnnotation(Action.class);
-                if (action != null) {
-                    String regex = action.value();
-                    MethodPattern methodPattern = new MethodPattern(method, regex);
-                    overwrite.add(methodPattern);
-                }
             }
         }
-
         for (MethodPattern mp : overwrite) {
             temp.put(mp.regex, mp);
 
-            Collection<Method> keywordMethods = KEYWORDS_METHODS.computeIfAbsent(mp.keyword, k -> new HashSet<>());
+            String keyword = mp.method.getName().equalsIgnoreCase("eval") ? "eval" : mp.keyword;
+            Collection<Method> keywordMethods = KEYWORDS_METHODS.computeIfAbsent(keyword, k -> new HashSet<>());
             keywordMethods.add(mp.method);
         }
         PATTERNS = temp.values();
@@ -242,7 +234,12 @@ public class StepRuntime {
     }
 
     public static Collection<Method> findMethodsByKeyword(String text) {
-        return KEYWORDS_METHODS.get(text);
+        if (KEYWORDS_METHODS.get(text) != null) {
+            return KEYWORDS_METHODS.get(text);
+        } else {
+            LOGGER.warn("No keyword found for {}. Potential unexpected behavior.", text);
+            return new HashSet<>();
+        }
     }
 
     private static long getElapsedTimeNanos(long startTime) {
@@ -254,10 +251,20 @@ public class StepRuntime {
         List<MethodMatch> matches = findMethodsMatching(text);
         if (matches.isEmpty()) {
             KarateException e = new KarateException("no step-definition method match found for: " + text);
-            return Result.failed(0, e, step);
+            return Result.failed(System.currentTimeMillis(), 0, e, step);
         } else if (matches.size() > 1) {
-            KarateException e = new KarateException("more than one step-definition method matched: " + text + " - " + matches);
-            return Result.failed(0, e, step);
+            boolean evalAssign = false; // special case to support foo.bar = (docstring) in cucumber syntax
+            for (MethodMatch m : matches) {
+                if (m.getMethod().getName().equalsIgnoreCase("evalAssignDocString")) {
+                    evalAssign = true;
+                    matches = Collections.singletonList(m);
+                    break;
+                }
+            }
+            if (!evalAssign) {
+                KarateException e = new KarateException("more than one step-definition method matched: " + text + " - " + matches);
+                return Result.failed(System.currentTimeMillis(), 0, e, step);
+            }
         }
         MethodMatch match = matches.get(0);
         Object last;
@@ -273,22 +280,24 @@ public class StepRuntime {
             args = match.convertArgs(last);
         } catch (Exception ignored) { // edge case where user error causes [request =] to match [request docstring]
             KarateException e = new KarateException("no step-definition method match found for: " + text);
-            return Result.failed(0, e, step);
+            return Result.failed(System.currentTimeMillis(), 0, e, step);
         }
-        long startTime = System.nanoTime();
+        final long startTime = System.currentTimeMillis();
+        final long startTimeNanos = System.nanoTime();
         try {
             match.method.invoke(actions, args);
+            final long elapsedTimeNanos = getElapsedTimeNanos(startTimeNanos);
             if (actions.isAborted()) {
-                return Result.aborted(getElapsedTimeNanos(startTime), match);
+                return Result.aborted(startTime, elapsedTimeNanos, match);
             } else if (actions.isFailed()) {
-                return Result.failed(getElapsedTimeNanos(startTime), actions.getFailedReason(), step, match);
+                return Result.failed(startTime, elapsedTimeNanos, actions.getFailedReason(), step, match);
             } else {
-                return Result.passed(getElapsedTimeNanos(startTime), match);
+                return Result.passed(startTime, elapsedTimeNanos, match);
             }
         } catch (InvocationTargetException e) {
-            return Result.failed(getElapsedTimeNanos(startTime), e.getTargetException(), step, match);
+            return Result.failed(startTime, getElapsedTimeNanos(startTimeNanos), e.getTargetException(), step, match);
         } catch (Exception e) {
-            return Result.failed(getElapsedTimeNanos(startTime), e, step, match);
+            return Result.failed(startTime, getElapsedTimeNanos(startTimeNanos), e, step, match);
         }
     }
 

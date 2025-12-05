@@ -28,6 +28,10 @@ Scenario: pathMatches('/v1/binary/upload')
     * def success = java.util.Arrays.equals(Utils.testBytes, requestBytes)
     * def response = ({ success: success })
 
+Scenario: pathMatches('/v1/binary/brotli')
+    * def responseHeaders = { 'Content-Encoding': 'br', 'Content-Type': 'application/json' }
+    * def response = karate.readAsBytes('brotli.bin')
+
 Scenario: pathMatches('/v1/patch')
     * def responseStatus = 422
     * def response = { success: true }
@@ -75,6 +79,9 @@ Scenario: pathMatches('/v1/upload/excel')
 Scenario: pathMatches('/v1/multipart')
     * def response = { success: true }
 
+Scenario: pathMatches('/v1/multipart/json')
+    * json response = requestParams['message'][0]
+
 Scenario: pathMatches('/v1/form')
     # TODO urlencoded form handling on server side
     * def response = { success: true }
@@ -96,3 +103,33 @@ Scenario: pathMatches('/v1/xmlformed')
 
 Scenario: pathMatches('/v1/stringformed')
     * def response = 'hello world'
+
+Scenario: pathMatches('/v1/html')
+    * text response =
+    """
+    <!DOCTYPE html>
+    <html lang="en-US">
+        <head>
+            <title>Hello world</title>
+            <!-- conforms to spec https://html.spec.whatwg.org/#unquoted -->
+            <script nonce=abc123 type="text/javascript">
+            </script>
+        </head>
+        <body>
+         <h1>Hello</h1>
+        </body>
+    </html>
+    """
+
+Scenario: pathMatches('/v1/invalid-cookie')
+    * def responseHeaders = { 'Set-Cookie': 'detectedTimeZoneId=FLE Standard Time' }
+
+Scenario: pathMatches('/v1/call-shared')
+    * def fromCaller = 'world'
+    * call read('called.feature') 
+    * def response = message
+
+Scenario: pathMatches('/v1/call-isolated')
+    * def fromCaller = 'world'
+    * def result = call read('called.feature') 
+    * def response = result.message

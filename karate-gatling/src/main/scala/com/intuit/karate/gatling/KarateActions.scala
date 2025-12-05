@@ -1,3 +1,26 @@
+/*
+ * The MIT License
+ *
+ * Copyright 2022 Karate Labs Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
 package com.intuit.karate.gatling
 
 import java.util.function.Consumer
@@ -20,7 +43,7 @@ import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 
 class KarateFeatureAction(val name: String, val tags: Seq[String], val protocol: KarateProtocol, val system: ActorSystem,
-                          val statsEngine: StatsEngine, val clock: Clock, val next: Action) extends ExitableAction {
+                          val statsEngine: StatsEngine, val clock: Clock, val next: Action, val isSilent: Boolean = false) extends ExitableAction {
 
   override def execute(session: Session) = {
 
@@ -50,6 +73,9 @@ class KarateFeatureAction(val name: String, val tags: Seq[String], val protocol:
       }
 
       override def reportPerfEvent(event: PerfEvent): Unit = {
+        if(isSilent){
+          return
+        }
         val okOrNot = if (event.isFailed) KO else OK
         val message = if (event.getMessage == null) None else Option(event.getMessage)
         statsEngine.logResponse(session.scenario, session.groups, event.getName, event.getStartTime, event.getEndTime, okOrNot, Option(event.getStatusCode.toString), message)
@@ -94,7 +120,7 @@ class KarateFeatureAction(val name: String, val tags: Seq[String], val protocol:
     runner.callOnceCache(protocol.callOnceCache)
     runner.tags(tags.asJava)
 
-    Runner.callAsync(protocol.runner, name, callArg, perfHook)
+    Runner.callAsync(runner, name, callArg, perfHook)
 
   }
 
@@ -102,9 +128,16 @@ class KarateFeatureAction(val name: String, val tags: Seq[String], val protocol:
 
 class KarateFeatureActionBuilder(name: String, tags: Seq[String]) extends ActionBuilder {
 
+  private var isSilent = false
+  
+  def silent(): KarateFeatureActionBuilder = {
+      this.isSilent = true;
+      this;
+  }
+
   override def build(ctx: ScenarioContext, next: Action): Action = {
     val karateComponents = ctx.protocolComponentsRegistry.components(KarateProtocol.KarateProtocolKey)
-    new KarateFeatureAction(name, tags, karateComponents.protocol, karateComponents.system, ctx.coreComponents.statsEngine, ctx.coreComponents.clock, next)
+    new KarateFeatureAction(name, tags, karateComponents.protocol, karateComponents.system, ctx.coreComponents.statsEngine, ctx.coreComponents.clock, next, isSilent)
   }
 
 }

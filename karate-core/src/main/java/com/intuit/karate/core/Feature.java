@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,10 +49,6 @@ public class Feature {
     private String description;
     private Background background;
     private List<FeatureSection> sections = new ArrayList();
-
-    private String callTag;
-    private String callName;
-    private int callLine = -1;
 
     public static Feature read(String path) {
         return read(ResourceUtils.getResource(FileUtils.WORKING_DIR, path));
@@ -122,6 +118,29 @@ public class Feature {
         }
         return null;
     }
+    
+    public Scenario getSetup(String name) {
+        for (FeatureSection section : sections) {
+            if (section.isOutline()) {
+                continue;
+            }
+            Scenario scenario = section.getScenario();
+            List<Tag> foundTags = scenario.getTags();
+            if (foundTags != null) {
+                for (Tag tag : foundTags) {
+                    if (Tag.SETUP.equals(tag.getName())) {
+                        if (name == null) {
+                            return scenario;
+                        }
+                        if (tag.getValues().contains(name)) {
+                            return scenario;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
     public void addSection(FeatureSection section) {
         section.setIndex(sections.size());
@@ -148,30 +167,6 @@ public class Feature {
             return null;
         }
         return steps.get(stepIndex);
-    }
-
-    public String getCallTag() {
-        return callTag;
-    }
-
-    public void setCallTag(String callTag) {
-        this.callTag = callTag;
-    }
-
-    public String getCallName() {
-        return callName;
-    }
-
-    public void setCallName(String callName) {
-        this.callName = callName;
-    }
-
-    public int getCallLine() {
-        return callLine;
-    }
-
-    public void setCallLine(int callLine) {
-        this.callLine = callLine;
     }
 
     public int getLine() {

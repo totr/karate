@@ -96,6 +96,11 @@ class StringUtilsTest {
         assertEquals("foo--bar", StringUtils.toIdString("foo//bar"));
         assertEquals("foo-bar", StringUtils.toIdString("foo\\bar"));
         assertEquals("foo-bar", StringUtils.toIdString("foo:bar"));
+        assertEquals("foo-bar", StringUtils.toIdString("foo?bar"));
+        assertEquals("foo-bar", StringUtils.toIdString("foo\"bar"));
+        assertEquals("foo-bar", StringUtils.toIdString("foo*bar"));
+        assertEquals("foo-bar", StringUtils.toIdString("foo|bar"));
+        assertEquals("foo--bar", StringUtils.toIdString("foo<>bar"));
         assertEquals("", StringUtils.toIdString(null)); // TODO
     }
 
@@ -129,6 +134,14 @@ class StringUtilsTest {
                 StringUtils.wrappedLinesEstimate("foobarbazfoobarbaz", 20));
         assertEquals(0,
                 StringUtils.wrappedLinesEstimate("", 2));
+    }
+
+    @Test
+    void testContainsIgnoreCase() {
+        List<String> list = Arrays.asList("foo", "bar");
+        assertTrue(StringUtils.containsIgnoreCase(list, "foo"));
+        assertTrue(StringUtils.containsIgnoreCase(list, "Foo"));
+        assertFalse(StringUtils.containsIgnoreCase(list, "baz"));
     }
 
 }

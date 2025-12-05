@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -133,6 +133,11 @@ public class Keys {
         CODES.put(c, code);
         VALUES.put(c, value);
     }
+    
+    public static final int CODE_SHIFT = 16;
+    public static final int CODE_CONTROL = 17;
+    public static final int CODE_ALT = 18;
+    public static final int CODE_META = 91; // left command key on mac, right is 93
 
     static {
         put(CANCEL, 3, "Cancel");
@@ -142,9 +147,9 @@ public class Keys {
         put(NULL, 12, "Clear"); // same as clear
         put(RETURN, 13, "Enter"); // same as enter
         put(ENTER, 13, "Enter");
-        put(SHIFT, 16, "Shift");
-        put(CONTROL, 17, "Control");
-        put(ALT, 18, "Alt");
+        put(SHIFT, CODE_SHIFT, "Shift");
+        put(CONTROL, CODE_CONTROL, "Control");
+        put(ALT, CODE_ALT, "Alt");
         put(PAUSE, 19, "Pause");
         put(ESCAPE, 27, "Escape");
         put(SPACE, 32, " ");
@@ -187,7 +192,7 @@ public class Keys {
         put(DELETE, 127, "Delete");
         put(INSERT, 155, "Insert");
         put(HELP, 156, "Help");
-        put(META, 157, "Meta");       
+        put(META, CODE_META, "Meta");
         //======================================================================
         CODES.put(' ', 32);
         CODES.put(',', 44);
@@ -206,35 +211,58 @@ public class Keys {
         CODES.put('9', 57);
         CODES.put(';', 59);
         CODES.put('=', 61);
-        CODES.put('a', 65);
-        CODES.put('b', 66);
-        CODES.put('c', 67);
-        CODES.put('d', 68);
-        CODES.put('e', 69);
-        CODES.put('f', 70);
-        CODES.put('g', 71);
-        CODES.put('h', 72);
-        CODES.put('i', 73);
-        CODES.put('j', 74);
-        CODES.put('k', 75);
-        CODES.put('l', 76);
-        CODES.put('m', 77);
-        CODES.put('n', 78);
-        CODES.put('o', 79);
-        CODES.put('p', 80);
-        CODES.put('q', 81);
-        CODES.put('r', 82);
-        CODES.put('s', 83);
-        CODES.put('t', 84);
-        CODES.put('u', 85);
-        CODES.put('v', 86);
-        CODES.put('w', 87);
-        CODES.put('x', 88);
-        CODES.put('y', 89);
-        CODES.put('z', 90);
-        CODES.put('[', 91);
-        CODES.put('\\', 92);
-        CODES.put(']', 93);
+        CODES.put('A', 65);
+        CODES.put('B', 66);
+        CODES.put('C', 67);
+        CODES.put('D', 68);
+        CODES.put('E', 69);
+        CODES.put('F', 70);
+        CODES.put('G', 71);
+        CODES.put('H', 72);
+        CODES.put('I', 73);
+        CODES.put('J', 74);
+        CODES.put('K', 75);
+        CODES.put('L', 76);
+        CODES.put('M', 77);
+        CODES.put('N', 78);
+        CODES.put('O', 79);
+        CODES.put('P', 80);
+        CODES.put('Q', 81);
+        CODES.put('R', 82);
+        CODES.put('S', 83);
+        CODES.put('T', 84);
+        CODES.put('U', 85);
+        CODES.put('V', 86);
+        CODES.put('W', 87);
+        CODES.put('X', 88);
+        CODES.put('Y', 89);
+        CODES.put('Z', 90);
+        CODES.put('a', 97);
+        CODES.put('b', 98);
+        CODES.put('c', 99);
+        CODES.put('d', 100);
+        CODES.put('e', 101);
+        CODES.put('f', 102);
+        CODES.put('g', 103);
+        CODES.put('h', 104);
+        CODES.put('i', 105);
+        CODES.put('j', 106);
+        CODES.put('k', 107);
+        CODES.put('l', 108);
+        CODES.put('m', 109);
+        CODES.put('n', 110);
+        CODES.put('o', 111);
+        CODES.put('p', 112);
+        CODES.put('q', 113);
+        CODES.put('r', 114);
+        CODES.put('s', 115);
+        CODES.put('t', 116);
+        CODES.put('u', 117);
+        CODES.put('v', 118);
+        CODES.put('w', 119);
+        CODES.put('x', 120);
+        CODES.put('y', 121);
+        CODES.put('z', 122);
         CODES.put('&', 150);
         CODES.put('*', 151);
         CODES.put('"', 152);
@@ -242,7 +270,15 @@ public class Keys {
         CODES.put('>', 160);
         CODES.put('{', 161);
         CODES.put('}', 162);
+        CODES.put('~', 171);
+        CODES.put('|', 172);
+        CODES.put('%', 175);
+        CODES.put('^', 176);
+        CODES.put('?', 191);
         CODES.put('`', 192);
+        CODES.put('[', 219);
+        CODES.put('\\', 220);
+        CODES.put(']', 221);
         CODES.put('\'', 222);
         CODES.put('@', 512);
         CODES.put(':', 513);

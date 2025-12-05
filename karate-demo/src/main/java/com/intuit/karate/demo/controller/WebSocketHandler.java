@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,7 +44,7 @@ public class WebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession wss, TextMessage message) throws Exception {                
-        broadcast("hello " + message.getPayload() + " !");
+        broadcast(wss.getId(), "hello " + message.getPayload() + " !");
     }
 
     @Override
@@ -63,16 +63,18 @@ public class WebSocketHandler extends TextWebSocketHandler {
         }
     }        
     
-    public void broadcast(String message) throws Exception {
+    public void broadcast(String id, String message) throws Exception {
         logger.debug("sleeping before broadcast: {}", message);
         Thread.sleep(1000);
         synchronized (sessions) {
             for (WebSocketSession session : sessions) {
-                logger.debug("sending to websocket session: {}", session);
-                try {
-                    session.sendMessage(new TextMessage(message));
-                } catch (Exception e) {
-                    logger.warn("broadcast failed for session: {} - {}", session, e.getMessage());
+                if (id == null || id == session.getId()) {
+                    logger.debug("sending to websocket session: {}", session);
+                    try {
+                        session.sendMessage(new TextMessage(message));
+                    } catch (Exception e) {
+                        logger.warn("broadcast failed for session: {} - {}", session, e.getMessage());
+                    }
                 }
             } 
         }

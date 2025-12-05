@@ -1,8 +1,8 @@
-@mock-servlet-todo
 Feature: scenario outline using a dynamic generator function
 
-Background:
-    * def generator = function(i){ if (i == 20) return null; return { name: 'cat' + i, age: i } }
+@setup
+Scenario:
+    * def generator = function(i){ if (i == 10) return null; return { name: 'DynaCat' + i, age: i } }
 
 Scenario Outline: cat name: <name>
     Given url demoBaseUrl
@@ -13,5 +13,5 @@ Scenario Outline: cat name: <name>
     And match response == { id: '#number', name: '#(name)' }
 
     Examples:
-    | generator |
+    | karate.setup().generator |
     

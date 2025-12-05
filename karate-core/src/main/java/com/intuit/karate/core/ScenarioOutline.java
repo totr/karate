@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@ package com.intuit.karate.core;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author pthomas3
@@ -40,6 +41,7 @@ public class ScenarioOutline {
     private String description;
     private List<Step> steps;
     private List<ExamplesTable> examplesTables;
+    private int numScenarios = 0;
     
     public ScenarioOutline(Feature feature, FeatureSection section) {
         this.feature = feature;
@@ -75,6 +77,7 @@ public class ScenarioOutline {
             step.setTable(original.getTable());
             step.setComments(original.getComments());
         }
+        numScenarios++;
         return s;
     }
     
@@ -90,7 +93,7 @@ public class ScenarioOutline {
             if (fr != null && examplesHaveTags && fr.caller.isNone()) {
                 // getting examples in the context of an execution
                 // if the examples do not have any tagged example, do not worry about selecting
-                Tags tableTags = Tags.merge(fr.feature.getTags(), tags, examples.getTags());
+                Tags tableTags = Tags.merge(fr.featureCall.feature.getTags(), tags, examples.getTags());
                 boolean executeForTable = tableTags.evaluate(fr.suite.tagSelector, fr.suite.env);
                 if (executeForTable) {
                     selectedForExecution = true;
@@ -101,8 +104,7 @@ public class ScenarioOutline {
             if (selectedForExecution) {
                 Table table = examples.getTable();
                 if (table.isDynamic()) {
-                    // technically row index 0 to denote an example (not -1)
-                    Scenario scenario = toScenario(table.getDynamicExpression(), 0, table.getLineNumberForRow(0), examples.getTags());
+                    Scenario scenario = toScenario(table.getDynamicExpression(), -1, table.getLineNumberForRow(0), examples.getTags());
                     list.add(scenario);
                 } else {
                     int rowCount = table.getRows().size();
@@ -168,9 +170,23 @@ public class ScenarioOutline {
     public List<ExamplesTable> getExamplesTables() {
         return examplesTables;
     }
+
+    public int getNumExampleTables() {
+        return examplesTables.size();
+    }
+
+    public List<Map<String, Object>> getAllExampleData() {
+        List<Map<String, Object>> exampleData = new ArrayList();
+        examplesTables.forEach(table -> exampleData.add(table.toKarateJson()));
+        return exampleData;
+    }
     
     public void setExamplesTables(List<ExamplesTable> examplesTables) {
         this.examplesTables = examplesTables;
+    }
+
+    public int getNumScenarios() {
+        return numScenarios;
     }
     
 }

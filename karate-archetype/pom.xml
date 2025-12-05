@@ -3,26 +3,24 @@
     <modelVersion>4.0.0</modelVersion>
  
     <parent>
-        <groupId>com.intuit.karate</groupId>
+        <groupId>io.karatelabs</groupId>
         <artifactId>karate-parent</artifactId>
-        <version>1.1.0</version>
+        <version>1.5.2</version>
     </parent>
     <artifactId>karate-archetype</artifactId>
     <packaging>jar</packaging>
-    
+
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.0.2</version>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>${central.publishing.maven.plugin.version}</version>
                 <configuration>
-                    <includeEmptyDirs>true</includeEmptyDirs>
-                    <addDefaultExcludes>false</addDefaultExcludes>
+                    <skipPublishing>true</skipPublishing>
                 </configuration>
             </plugin>
-
         </plugins>
-    </build>    
+    </build>
     
 </project>

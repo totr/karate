@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
  */
 package com.intuit.karate;
 
+import com.intuit.karate.http.ResourceType;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.Option;
 import com.jayway.jsonpath.spi.json.JsonProvider;
@@ -30,7 +31,7 @@ import com.jayway.jsonpath.spi.json.JsonSmartJsonProvider;
 import com.jayway.jsonpath.spi.mapper.JsonSmartMappingProvider;
 import com.jayway.jsonpath.spi.mapper.MappingProvider;
 import de.siegmar.fastcsv.reader.CsvReader;
-import de.siegmar.fastcsv.reader.CsvRow;
+import de.siegmar.fastcsv.reader.CsvRecord;
 import de.siegmar.fastcsv.writer.CsvWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -48,10 +49,12 @@ import net.minidev.json.JSONValue;
 import net.minidev.json.parser.JSONParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import static net.minidev.json.JSONValue.defaultReader;
+import org.w3c.dom.Node;
 
 /**
  *
@@ -60,6 +63,8 @@ import static net.minidev.json.JSONValue.defaultReader;
 public class JsonUtils {
 
     private static final Logger logger = LoggerFactory.getLogger(JsonUtils.class);
+
+    private static final JSONStyle JSON_STYLE = new JSONStyle(JSONStyle.FLAG_PROTECT_4WEB);
 
     private JsonUtils() {
         // only static methods
@@ -105,7 +110,7 @@ public class JsonUtils {
         JSONParser jp = new JSONParser(JSONParser.MODE_PERMISSIVE);
         try {
             Object o = jp.parse(raw);
-            return JSONValue.toJSONString(o);
+            return JSONValue.toJSONString(o, JSON_STYLE);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -118,7 +123,7 @@ public class JsonUtils {
     public static String toJson(Object o, boolean pretty) {
         if (!pretty) { // TODO use JSONStyleIdent in json-smart 2.4
             try {
-                return JSONValue.toJSONString(o);
+                return JSONValue.toJSONString(o, JSON_STYLE);
             } catch (Throwable t) {
                 logger.warn("object to json serialization failure, trying alternate approach: {}", t.getMessage());
             }
@@ -157,19 +162,21 @@ public class JsonUtils {
     }
 
     public static Object fromYaml(String raw) {
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         return yaml.load(raw);
     }
 
     public static List<Map> fromCsv(String raw) {
-        CsvReader reader = CsvReader.builder().build(raw);
-        List<String> header = Collections.emptyList();
+        CsvReader<CsvRecord> reader = CsvReader.builder().ofCsvRecord(raw);
+        List<String> header = new ArrayList();
         List<Map> rows = new ArrayList();
         try {
             boolean first = true;
-            for (CsvRow row : reader) {
+            for (CsvRecord row : reader) {
                 if (first) {
-                    header = row.getFields();
+                    for (String field : row.getFields()) {
+                        header.add(field.replace("\ufeff", "")); // remove byte order mark
+                    }
                     first = false;
                 } else {
                     int count = header.size();
@@ -192,16 +199,26 @@ public class JsonUtils {
         CsvWriter writer = CsvWriter.builder().build(sw);
         // header row
         if (!list.isEmpty()) {
-            writer.writeRow(list.get(0).keySet());
+            writer.writeRecord(list.get(0).keySet());
         }
         for (Map<String, Object> map : list) {
             List<String> row = new ArrayList(map.size());
             for (Object value : map.values()) {
                 row.add(value == null ? null : value.toString());
             }
-            writer.writeRow(row);
+            writer.writeRecord(row);
         }
         return sw.toString();
+    }
+
+    public static Object shallowCopy(Object o) {
+        if (o instanceof List) {
+            return new ArrayList((List) o);
+        } else if (o instanceof Map) {
+            return new LinkedHashMap((Map) o);
+        } else {
+            return o;
+        }
     }
 
     public static Object deepCopy(Object o) {
@@ -268,13 +285,13 @@ public class JsonUtils {
         if (o == null) {
             sb.append("null");
         } else if (o instanceof List) {
-            List list = (List) o;
-            Iterator iterator = list.iterator();
-            if (seen.add(o)) {
+            List list = (List) o;            
+            if (list.isEmpty() || seen.add(o)) {                
                 sb.append('[');
                 if (pretty) {
                     sb.append('\n');
                 }
+                Iterator iterator = list.iterator();
                 while (iterator.hasNext()) {
                     Object child = iterator.next();
                     if (pretty) {
@@ -296,12 +313,12 @@ public class JsonUtils {
                 ref(sb, o);
             }
         } else if (o instanceof Map) {
-            if (seen.add(o)) {
+            Map<String, Object> map = (Map<String, Object>) o;
+            if (map.isEmpty() || seen.add(o)) {
                 sb.append('{');
                 if (pretty) {
                     sb.append('\n');
-                }
-                Map<String, Object> map = (Map<String, Object>) o;
+                }                
                 Iterator<Map.Entry<String, Object>> iterator = map.entrySet().iterator();
                 while (iterator.hasNext()) {
                     Map.Entry<String, Object> entry = iterator.next();
@@ -360,4 +377,117 @@ public class JsonUtils {
         }
     }
 
+    public static Map<String, String> simplify(Map<String, List<String>> map) {
+        if (map == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> result = new LinkedHashMap(map.size());
+        map.forEach((k, v) -> {
+            if (v instanceof List) {
+                List list = (List) v;
+                if (list.size() > 1) {
+                    result.put(k, StringUtils.join(list, ","));
+                } else if (list.size() == 1) {
+                    Object value = list.get(0);
+                    if (value != null) {
+                        result.put(k, value + "");
+                    }                    
+                }
+            } else if (v != null) {
+                result.put(k, v + "");
+            }
+        });
+        return result;
+    }
+
+    public static String toString(Object o) {
+        return toString(o, false);
+    }
+
+    public static String toString(Object o, boolean pretty) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Map || o instanceof List) {
+            return JsonUtils.toJson(o, pretty);
+        } else if (o instanceof Node) {
+            return XmlUtils.toString((Node) o, pretty);
+        } else if (o instanceof byte[]) {
+            return FileUtils.toString((byte[]) o);
+        } else {
+            return o.toString();
+        }
+    }
+
+    public static byte[] toBytes(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Map || o instanceof List) {
+            return FileUtils.toBytes(JsonUtils.toJson(o));
+        } else if (o instanceof Node) {
+            return FileUtils.toBytes(XmlUtils.toString((Node) o));
+        } else if (o instanceof byte[]) {
+            return (byte[]) o;
+        } else {
+            return FileUtils.toBytes(o.toString());
+        }
+    }
+
+    public static Object fromBytes(byte[] bytes, boolean strict, ResourceType resourceType) {
+        if (bytes == null) {
+            return null;
+        }
+        String raw = FileUtils.toString(bytes);
+        return fromString(raw, strict, resourceType);
+    }
+
+    public static Object fromString(String raw, boolean strict, ResourceType resourceType) {
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return raw;
+        }
+        if (resourceType != null && resourceType.isBinary()) {
+            return raw;
+        }
+        switch (trimmed.charAt(0)) {
+            case '{':
+            case '[':
+                if (strict) {
+                    return JsonUtils.fromJsonStrict(raw);
+                }
+                try {
+                    return JsonUtils.fromJson(raw);
+                } catch (Exception e) {
+                    logger.trace("failed to parse json: {}", e.getMessage());
+                    return raw;
+                }
+            case '<':
+                if (resourceType == null || resourceType.isXml()) {
+                    try {
+                        return XmlUtils.toXmlDoc(raw);
+                    } catch (Exception e) {
+                        logger.trace("failed to parse xml: {}", e.getMessage());
+                        if (strict) {
+                            throw e;
+                        }
+                        return raw;
+                    }
+                } else {
+                    return raw;
+                }
+            default:
+                return raw;
+        }
+    }
+
+    public static Object fromStringSafe(String raw) {
+        try {
+            return fromString(raw, false, null);
+        } catch (Exception e) {
+            logger.trace("failed to auto convert: {}", e + "");
+            return raw;
+        }
+    }    
+    
 }

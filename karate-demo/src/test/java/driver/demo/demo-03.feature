@@ -14,20 +14,20 @@ Feature: 3 scenarios
     Then match html('.flash-error') contains 'Incorrect username or password.'
 
     Given driver 'https://google.com'
-    And input("input[name=q]", 'karate dsl')
+    And input("textarea[name=q]", 'karate dsl')
     When submit().click("input[name=btnI]")
-    Then match driver.url == 'https://github.com/intuit/karate'
+    Then match driver.url == 'https://github.com/karatelabs/karate'
 
   Scenario: google search, land on the karate github page, and search for a file
 
     Given driver 'https://google.com'
-    And input('input[name=q]', 'karate dsl')
+    And input('textarea[name=q]', 'karate dsl')
     When click('input[name=btnI]')
-    Then waitForUrl('https://github.com/intuit/karate')
+    Then waitForUrl('https://github.com/karatelabs/karate')
 
     When click('{a}Go to file')
     And def searchField = waitFor('input[name=query]')
-    Then match driver.url == 'https://github.com/intuit/karate/find/master'
+    Then match driver.url == 'https://github.com/karatelabs/karate/find/master'
 
     When searchField.input('karate-logo.png')
     Then def searchResults = waitForResultCount('.js-tree-browser-result-path', 2, '_.innerText')

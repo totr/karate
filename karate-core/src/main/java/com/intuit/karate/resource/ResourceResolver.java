@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,8 +24,6 @@
 package com.intuit.karate.resource;
 
 import com.intuit.karate.FileUtils;
-import java.io.File;
-import java.util.Set;
 
 /**
  *
@@ -35,7 +33,7 @@ public class ResourceResolver {
 
     public final boolean classpath;
     public final String root;
-    
+
     private static final String EMPTY = "";
     private static final String SLASH = "/";
 
@@ -55,33 +53,19 @@ public class ResourceResolver {
         return resolve(null, path);
     }
 
-    public Resource resolve(String parent, String path) {
+    public Resource resolve(String caller, String path) {
         if (path.startsWith(Resource.CLASSPATH_COLON)) {
             return get(path);
-        } else if (path.startsWith(Resource.ROOT_COLON)) {
-            path = path.substring(Resource.ROOT_COLON.length());
-            return get((classpath ? Resource.CLASSPATH_COLON : EMPTY) + root + path);
-        } else if (parent == null) {
-            return get((classpath ? Resource.CLASSPATH_COLON : EMPTY) + root + path);
-        } else if (parent.startsWith(Resource.CLASSPATH_COLON)) {
-            parent = ResourceUtils.getParentPath(parent);
-            return get(parent + path);
-        } else {
-            parent = ResourceUtils.getParentPath((classpath ? Resource.CLASSPATH_COLON : EMPTY) + root + parent);
-            return get(parent + path);
         }
+        String prefix = classpath ? Resource.CLASSPATH_COLON + root : root;
+        if (path.startsWith(Resource.THIS_COLON) && caller != null) {
+            return get(prefix + ResourceUtils.getParentPath(caller) + path.substring(5));
+        }
+        return get(prefix + (path.charAt(0) == '/' ? path.substring(1) : path));
     }
 
-    private static Resource get(String path) {
+    private Resource get(String path) {
         return ResourceUtils.getResource(FileUtils.WORKING_DIR, path);
-    }
-
-    public Set<String> getJsFiles() {
-        if (classpath) {
-            return ResourceUtils.findJsFilesInClassPath(root);
-        } else {
-            return ResourceUtils.findJsFilesInDirectory(new File(root));
-        }
     }
 
     @Override

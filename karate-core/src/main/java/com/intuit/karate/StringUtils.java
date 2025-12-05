@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2017 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +48,7 @@ public class StringUtils {
         // only static methods
     }
 
-    private static final String EMPTY = "";
+    public static final String EMPTY = "";
 
     public static class Pair {
 
@@ -173,10 +173,10 @@ public class StringUtils {
         if (name == null) {
             return "";
         }
-        return name.replaceAll("[\\s_\\\\/:]", "-").toLowerCase();
+        return name.replaceAll("[\\s_\\\\/:<>\"\\|\\?\\*]", "-").toLowerCase();
     }
 
-    public static StringUtils.Pair splitByFirstLineFeed(String text) {
+public static StringUtils.Pair splitByFirstLineFeed(String text) {
         String left = "";
         String right = "";
         if (text != null) {
@@ -239,9 +239,10 @@ public class StringUtils {
         if (map == null || name == null) {
             return null;
         }
-        for (String key : map.keySet()) {
+        for (Map.Entry<String, T> entry : map.entrySet()) {
+            String key = entry.getKey();
             if (name.equalsIgnoreCase(key)) {
-                return map.get(key);
+                return entry.getValue();
             }
         }
         return null;
@@ -257,6 +258,15 @@ public class StringUtils {
                 return;
             }
         }
+    }
+
+    public static boolean containsIgnoreCase(List<String> list, String str) {
+        for (String i : list) {
+            if (i.equalsIgnoreCase(str)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static String throwableToString(Throwable t) {

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,10 @@
  */
 package com.intuit.karate.driver;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  *
  * @author pthomas3
@@ -33,6 +37,8 @@ public class Input {
     protected boolean alt;
     protected boolean shift;
     protected boolean meta;
+
+    protected boolean release;
 
     private int pos = 0;
 
@@ -46,18 +52,43 @@ public class Input {
         return pos < chars.length;
     }
 
+    public List<Integer> getKeyCodesToRelease() {
+        if (control || alt || shift || meta) {
+            List<Integer> list = new ArrayList();
+            if (shift) {
+                list.add(Keys.CODE_SHIFT);
+            }
+            if (control) {
+                list.add(Keys.CODE_CONTROL);
+            }
+            if (alt) {
+                list.add(Keys.CODE_ALT);
+            }
+            if (meta) {
+                list.add(Keys.CODE_META);
+            }
+            return list;
+        } else {
+            return Collections.emptyList();
+        }
+    }
+
     private void updateModifiers(char c) {
         switch (c) {
             case Keys.CONTROL:
+                release = control;
                 control = !control;
                 break;
             case Keys.ALT:
+                release = alt;
                 alt = !alt;
                 break;
             case Keys.SHIFT:
+                release = shift;
                 shift = !shift;
                 break;
             case Keys.META:
+                release = meta;
                 meta = !meta;
                 break;
             default:

@@ -62,10 +62,9 @@ Scenario: upload with content created dynamically
     And match header Content-Disposition contains 'hello.txt'
     And match header Content-Type contains 'text/plain'
 
-@mock-servlet-todo
 Scenario: upload multipart/mixed
     Given path 'files', 'mixed'
-    And multipart field myJson = { value: { text: 'hello world' } }
+    And multipart field myJson = { text: 'hello world' }
     And multipart file myFile = { read: 'test.pdf', filename: 'upload-name.pdf', contentType: 'application/pdf' }
     And header Content-Type = 'multipart/mixed'
     When method post

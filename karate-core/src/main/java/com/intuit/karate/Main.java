@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation tests (the "Software"), to deal
@@ -25,25 +25,20 @@ package com.intuit.karate;
 
 import com.intuit.karate.core.MockServer;
 import com.intuit.karate.core.RuntimeHookFactory;
-import com.intuit.karate.debug.DapServer;
-import com.intuit.karate.formats.PostmanConverter;
 import com.intuit.karate.http.HttpServer;
 import com.intuit.karate.http.RequestHandler;
 import com.intuit.karate.http.ServerConfig;
+import com.intuit.karate.http.ServerContext;
 import com.intuit.karate.http.SslContextFactory;
-import com.intuit.karate.job.JobExecutor;
 import com.intuit.karate.resource.ResourceUtils;
 import com.intuit.karate.shell.Command;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.LoggerFactory;
@@ -64,11 +59,11 @@ public class Main implements Callable<Void> {
     @Option(names = {"-h", "--help"}, usageHelp = true, description = "display this help message")
     boolean help;
 
-    @Parameters(split = "$", description = "one or more tests (features) or search-paths to run")
+    @Parameters(split = "($|,)", description = "one or more tests (features) or search-paths to run")
     List<String> paths;
 
     @Option(names = {"-m", "--mock", "--mocks"}, split = ",", description = "one or more mock server files")
-    List<File> mocks;
+    List<String> mocks;
 
     @Option(names = {"-P", "--prefix"}, description = "mock server path prefix (context-path)")
     String prefix = "/";
@@ -77,10 +72,10 @@ public class Main implements Callable<Void> {
     int port = 8080;
 
     @Option(names = {"-W", "--watch"}, description = "watch (and hot-reload) mock server file for changes")
-    boolean watch;    
+    boolean watch;
 
     @Option(names = {"-S", "--serve"}, description = "app server using --workdir (experimental)")
-     boolean serve;
+    boolean serve;
 
     @Option(names = {"-s", "--ssl"}, description = "use ssl / https, will use '"
             + SslContextFactory.DEFAULT_CERT_NAME + "' and '" + SslContextFactory.DEFAULT_KEY_NAME
@@ -97,13 +92,13 @@ public class Main implements Callable<Void> {
     List<String> tags;
 
     @Option(names = {"-T", "--threads"}, description = "number of threads when running tests")
-    int threads = 1;
+    int threads;
 
-    @Option(names = {"-o", "--output"}, description = "directory where logs and reports are output (default 'target')")
+    @Option(names = {"-o", "--output"}, description = "directory where logs and report sub-folders are output (default 'target')")
     String output = FileUtils.getBuildDir();
 
     @Option(names = {"-f", "--format"}, split = ",", description = "comma separate report output formats. tilde excludes the output report. html report is included by default unless it's negated."
-            + "e.g. '-f json,cucumber:json,junit:xml. Possible values [html: Karate HTML, json: Karate JSON, cucumber:json: Cucumber JSON, junit:xml: JUnit XML]")
+            + "e.g. '-f ~html,cucumber:json,junit:xml' - possible values [html: Karate HTML, cucumber:json: Cucumber JSON, junit:xml: JUnit XML]")
     List<String> formats;
 
     @Option(names = {"-n", "--name"}, description = "scenario name")
@@ -118,24 +113,27 @@ public class Main implements Callable<Void> {
     @Option(names = {"-g", "--configdir"}, description = "directory where 'karate-config.js' is expected (default 'classpath:' or <workingdir>)")
     String configDir;
 
+    @Option(names = {"-r", "--reportdir"}, description = "directory where Karate HTML and JSON reports are placed (default '<output>/karate-reports')")
+    String reportDir;
+
     @Option(names = {"-C", "--clean"}, description = "clean output directory")
     boolean clean;
 
+    @Option(names = {"-B", "--backup-reportdir"}, defaultValue = "true", arity = "0..1", fallbackValue = "true", description = "backup report directory before running tests")
+    boolean backupReportDir = true;
+
     @Option(names = {"-d", "--debug"}, arity = "0..1", defaultValue = "-1", fallbackValue = "0",
             description = "debug mode (optional port else dynamically chosen)")
-    int debugPort;
+    int debugPort = -1;
 
     @Option(names = {"-D", "--dryrun"}, description = "dry run, generate html reports only")
     boolean dryRun;
 
-    @Option(names = {"-j", "--jobserver"}, description = "job server url")
-    String jobServerUrl;
-
-    @Option(names = {"-i", "--import"}, description = "import and convert a file")
-    String importFile;
-
     @Option(names = {"-H", "--hook"}, split = ",", description = "class name of a RuntimeHook (or RuntimeHookFactory) to add")
     List<String> hookFactoryClassNames;
+
+    @Option(names = {"--keep-original-headers"}, description = "keeping original headers given in the mock scenario or configure")
+    boolean keepOriginalHeaders;
 
     //==========================================================================
     //
@@ -161,6 +159,10 @@ public class Main implements Callable<Void> {
     public int getThreads() {
         return threads;
     }
+
+    public int getDebugPort() {
+        return debugPort;
+    }        
 
     public String getName() {
         return name;
@@ -198,35 +200,22 @@ public class Main implements Callable<Void> {
         this.configDir = configDir;
     }
 
+    public String getReportDir() {
+        return reportDir;
+    }
+
     public static Main parseKarateOptions(String line) {
         String[] args = Command.tokenize(line);
         return CommandLine.populateCommand(new Main(), args);
     }
 
-    // matches ( -X XXX )* (XXX)
-    private static final Pattern CLI_ARGS = Pattern.compile("(\\s*-{1,2}\\w\\s\\S*\\s*)*(.*)$");
-
-    // adds double-quotes to last positional parameter (path) in case it contains white-spaces and un-quoted
-    // only if line contains just one positional parameter (path) and it is the last one in line.
-    // needed for intelli-j and vs-code generated cli invocations
-    public static Main parseKarateOptionsAndQuotePath(String line) {
-        Matcher matcher = CLI_ARGS.matcher(line);
-        if (matcher.find()) {
-            String path = matcher.group(2).trim();
-            if (path.contains(" ")) {
-                // unquote if necessary
-                String options = line.substring(0, line.lastIndexOf(path));
-                path = path.replaceAll("^\"|^'|\"$|\'$", "");
-                line = String.format("%s \"%s\"", options, path);
-            }
-        }
-        return Main.parseKarateOptions(line.trim());
+    public static Main parseKarateArgs(List<String> args) {
+        return CommandLine.populateCommand(new Main(), args.toArray(new String[args.size()]));
     }
 
     public Collection<RuntimeHook> createHooks() {
         if (this.hookFactoryClassNames != null) {
-            return this.hookFactoryClassNames.stream()
-                    .map(c -> createHook(c)).collect(Collectors.toList());
+            return this.hookFactoryClassNames.stream().map(c -> createHook(c)).collect(Collectors.toList());
         }
         return Collections.emptyList();
     }
@@ -234,12 +223,11 @@ public class Main implements Callable<Void> {
     private RuntimeHook createHook(String hookClassName) {
         if (hookClassName != null) {
             try {
-                Class hookClass = Class.forName(hookClassName);
-                if (RuntimeHookFactory.class.isAssignableFrom(hookClass)) {
-                    return ((RuntimeHookFactory) hookClass.newInstance()).create();
-                } else if (RuntimeHook.class.isAssignableFrom(hookClass)) {
-                    return (RuntimeHook) hookClass.newInstance();
-
+                Class clazz = Class.forName(hookClassName);
+                if (RuntimeHookFactory.class.isAssignableFrom(clazz)) {;
+                    return ((RuntimeHookFactory) clazz.getDeclaredConstructor().newInstance()).create();
+                } else if (RuntimeHook.class.isAssignableFrom(clazz)) {
+                    return (RuntimeHook) clazz.getDeclaredConstructor().newInstance();
                 }
             } catch (Exception e) {
                 logger.error("error instantiating RuntimeHook: {}", hookClassName, e);
@@ -313,19 +301,33 @@ public class Main implements Callable<Void> {
         }
     }
 
+    public static Results startDebugServer(String[] args) {
+        try {
+            Class clazz = Class.forName("io.karatelabs.debug.Main");
+            if (args.length > 1) {
+                Method method = clazz.getMethod("run", String[].class);
+                Object results = method.invoke(null, (Object) args);
+                return (Results) results;
+            } else {
+                Method method = clazz.getMethod("main", String[].class);
+                method.invoke(null, (Object) args);
+                return null;
+            }
+        } catch (Exception e) {
+            String message = "debug server failed to start";
+            System.out.println(message);
+            throw new RuntimeException(message);
+        }
+    }
+
     @Override
     public Void call() throws Exception {
         if (clean) {
             FileUtils.deleteDirectory(new File(output));
             logger.info("deleted directory: {}", output);
         }
-        if (jobServerUrl != null) {
-            JobExecutor.run(jobServerUrl);
-            return null;
-        }
         if (debugPort != -1) {
-            DapServer server = new DapServer(debugPort);
-            server.waitSync();
+            startDebugServer(new String[]{debugPort + ""});
             return null;
         }
         if (paths != null) {
@@ -334,7 +336,9 @@ public class Main implements Callable<Void> {
                     .karateEnv(env)
                     .workingDir(workingDir)
                     .buildDir(output)
+                    .backupReportDir(backupReportDir)
                     .configDir(configDir)
+                    .reportDir(reportDir)
                     .outputHtmlReport(isOutputHtmlReport())
                     .outputCucumberJson(isOutputCucumberJson())
                     .outputJunitXml(isOutputJunitXml())
@@ -351,26 +355,7 @@ public class Main implements Callable<Void> {
             }
             return null;
         }
-        if (importFile != null) {
-            new PostmanConverter().convert(importFile, output);
-            return null;
-        }
         if (clean) {
-            return null;
-        }
-        if (serve) {
-            ServerConfig config = new ServerConfig(workingDir.getPath());
-            RequestHandler handler = new RequestHandler(config);
-            HttpServer server = HttpServer
-                    .handler(handler)
-                    .port(port)
-                    .corsEnabled(true)                    
-                    .build();
-            server.waitSync();
-            return null;
-        }
-        if (mocks == null || mocks.isEmpty()) {
-            CommandLine.usage(this, System.err);
             return null;
         }
         // these files will not be created, unless ssl or ssl proxying happens
@@ -382,12 +367,60 @@ public class Main implements Callable<Void> {
         if (env != null) { // some advanced mocks may want karate.env
             System.setProperty(Constants.KARATE_ENV, env);
         }
+        if (serve) {
+            ServerConfig config = new ServerConfig(workingDir.getPath())
+                    .noCache(true)
+                    .devMode(true)
+                    .autoCreateSession(true);
+            RequestHandler handler = new RequestHandler(config);
+            HttpServer.Builder builder = HttpServer
+                    .handler(handler)
+                    .corsEnabled(true)
+                    .keepOriginalHeaders(keepOriginalHeaders);
+            if (ssl) {
+                builder.https(port)
+                        .certFile(cert)
+                        .keyFile(key);
+            } else {
+                builder.http(port);
+            }
+            HttpServer server = builder.build();
+            server.waitSync();
+            return null;
+        }
+        if (mocks == null || mocks.isEmpty()) {
+            CommandLine.usage(this, System.err);
+            return null;
+        }
+        if (mocks.size() == 1 && mocks.get(0).endsWith(".js")) { // js mode
+            ServerConfig config = new ServerConfig(workingDir.getPath())
+                    .useGlobalSession(true);
+            config.contextFactory(request -> {
+                ServerContext context = new ServerContext(config, request);
+                context.setApi(true);
+                request.setResourcePath(mocks.get(0));
+                return context;
+            });
+            HttpServer.Builder builder = HttpServer.config(config)
+                    .local(false)
+                    .corsEnabled(true)
+                    .keepOriginalHeaders(keepOriginalHeaders);
+            if (ssl) {
+                builder.https(port);
+            } else {
+                builder.http(port);
+            }
+            HttpServer server = builder.build();
+            server.waitSync();
+            return null;
+        }
         MockServer.Builder builder = MockServer
-                .featureFiles(mocks)
+                .featurePaths(mocks)
                 .pathPrefix(prefix)
                 .certFile(cert)
                 .keyFile(key)
-                .watch(watch);
+                .watch(watch)
+                .keepOriginalHeaders(keepOriginalHeaders);
         if (ssl) {
             builder.https(port);
         } else {

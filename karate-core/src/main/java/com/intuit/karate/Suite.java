@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,37 +23,37 @@
  */
 package com.intuit.karate;
 
-import com.intuit.karate.core.Feature;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.intuit.karate.core.FeatureCall;
 import com.intuit.karate.core.FeatureResult;
 import com.intuit.karate.core.FeatureRuntime;
-import com.intuit.karate.driver.DriverRunner;
-import com.intuit.karate.report.ReportUtils;
 import com.intuit.karate.core.Scenario;
 import com.intuit.karate.core.ScenarioCall;
 import com.intuit.karate.core.ScenarioResult;
 import com.intuit.karate.core.ScenarioRuntime;
+import com.intuit.karate.core.Step;
 import com.intuit.karate.core.SyncExecutorService;
 import com.intuit.karate.core.Tags;
+import com.intuit.karate.driver.DriverRunner;
 import com.intuit.karate.http.HttpClientFactory;
-import com.intuit.karate.job.JobManager;
+import com.intuit.karate.report.ReportUtils;
 import com.intuit.karate.report.SuiteReports;
 import com.intuit.karate.resource.Resource;
 import com.intuit.karate.resource.ResourceUtils;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.slf4j.LoggerFactory;
+
+import static java.util.function.Predicate.not;
 
 /**
  *
@@ -66,11 +66,13 @@ public class Suite implements Runnable {
     public final long startTime;
     protected long endTime;
     protected int skippedCount;
+    private AtomicBoolean abort = new AtomicBoolean(false);
 
     public final String env;
     public final String tagSelector;
     public final boolean dryRun;
     public final boolean debugMode;
+    public final boolean failWhenNoScenariosFound;
     public final File workingDir;
     public final String buildDir;
     public final String reportDir;
@@ -78,7 +80,7 @@ public class Suite implements Runnable {
     public final int threadCount;
     public final int timeoutMinutes;
     public final int featuresFound;
-    public final List<Feature> features;
+    public final List<FeatureCall> features;
     public final List<CompletableFuture> futures;
     public final Set<File> featureResultFiles;
     public final Collection<RuntimeHook> hooks;
@@ -96,15 +98,12 @@ public class Suite implements Runnable {
     public final ExecutorService scenarioExecutor;
     public final ExecutorService pendingTasks;
 
-    public final JobManager jobManager;
-
     public final String karateBase;
     public final String karateConfig;
     public final String karateConfigEnv;
 
     public final Map<String, Object> callSingleCache;
     public final Map<String, ScenarioCall.Result> callOnceCache;
-    private final ReentrantLock progressFileLock;
 
     public final Map<String, DriverRunner> drivers;
 
@@ -119,8 +118,8 @@ public class Suite implements Runnable {
         }
     }
 
-    public static Suite forTempUse() {
-        return new Suite(Runner.builder().forTempUse());
+    public static Suite forTempUse(HttpClientFactory hcf) {
+        return new Suite(Runner.builder().clientFactory(hcf).forTempUse());
     }
 
     public Suite() {
@@ -131,12 +130,18 @@ public class Suite implements Runnable {
         if (rb.forTempUse) {
             dryRun = false;
             debugMode = false;
+            failWhenNoScenariosFound = false;
             backupReportDir = false;
             outputHtmlReport = false;
             outputCucumberJson = false;
             outputJunitXml = false;
-            classLoader = Thread.currentThread().getContextClassLoader();
-            clientFactory = HttpClientFactory.DEFAULT;
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            if (contextClassLoader != null) {
+                classLoader = contextClassLoader;
+            } else {
+                classLoader = getClass().getClassLoader();
+            }
+            clientFactory = rb.clientFactory == null ? HttpClientFactory.DEFAULT : rb.clientFactory;
             startTime = -1;
             env = rb.env;
             systemProperties = null;
@@ -160,8 +165,6 @@ public class Suite implements Runnable {
             callSingleCache = null;
             callOnceCache = null;
             suiteReports = null;
-            jobManager = null;
-            progressFileLock = null;
             drivers = null;
         } else {
             startTime = System.currentTimeMillis();
@@ -172,6 +175,7 @@ public class Suite implements Runnable {
             outputJunitXml = rb.outputJunitXml;
             dryRun = rb.dryRun;
             debugMode = rb.debugMode;
+            failWhenNoScenariosFound = rb.failWhenNoScenariosFound;
             classLoader = rb.classLoader;
             clientFactory = rb.clientFactory;
             env = rb.env;
@@ -195,11 +199,6 @@ public class Suite implements Runnable {
             } else {
                 karateConfigEnv = null;
             }
-            if (rb.jobConfig != null) {
-                jobManager = new JobManager(rb.jobConfig);
-            } else {
-                jobManager = null;
-            }
             drivers = rb.drivers;
             threadCount = rb.threadCount;
             timeoutMinutes = rb.timeoutMinutes;
@@ -211,7 +210,6 @@ public class Suite implements Runnable {
                 scenarioExecutor = SyncExecutorService.INSTANCE;
                 pendingTasks = SyncExecutorService.INSTANCE;
             }
-            progressFileLock = new ReentrantLock();
         }
     }
 
@@ -223,7 +221,8 @@ public class Suite implements Runnable {
             }
             hooks.forEach(h -> h.beforeSuite(this));
             int index = 0;
-            for (Feature feature : features) {
+            List<FeatureRuntime> featureRuntimes = new ArrayList<>(featuresFound);
+            for (FeatureCall feature : features) {
                 final int featureNum = ++index;
                 FeatureRuntime fr = FeatureRuntime.of(this, feature);
                 final CompletableFuture future = new CompletableFuture();
@@ -232,14 +231,12 @@ public class Suite implements Runnable {
                     onFeatureDone(fr.result, featureNum);
                     future.complete(Boolean.TRUE);
                 });
-                pendingTasks.submit(fr);
+                featureRuntimes.add(fr);
             }
             if (featuresFound > 1) {
                 logger.debug("waiting for {} features to complete", featuresFound);
             }
-            if (jobManager != null) {
-                jobManager.start();
-            }
+            featureRuntimes.forEach(pendingTasks::submit);
             CompletableFuture[] futuresArray = futures.toArray(new CompletableFuture[futures.size()]);
             if (timeoutMinutes > 0) {
                 CompletableFuture.allOf(futuresArray).get(timeoutMinutes, TimeUnit.MINUTES);
@@ -252,11 +249,16 @@ public class Suite implements Runnable {
         } finally {
             scenarioExecutor.shutdownNow();
             pendingTasks.shutdownNow();
-            if (jobManager != null) {
-                jobManager.server.stop();
-            }
             hooks.forEach(h -> h.afterSuite(this));
         }
+    }
+
+    public void abort() {
+        abort.set(true);
+    }
+
+    public boolean isAborted() {
+        return abort.get();
     }
 
     public void saveFeatureResults(FeatureResult fr) {
@@ -285,6 +287,7 @@ public class Suite implements Runnable {
             } catch (Throwable t) {
                 logger.error("<<error>> unable to write report file(s): {} - {}", fr.getFeature(), t + "");
                 fr.printStats();
+                return; // don't attempt to save progress that might fail as well
             }
         } else {
             skippedCount++;
@@ -292,15 +295,27 @@ public class Suite implements Runnable {
                 logger.trace("<<skip>> feature {} of {}: {}", index, featuresFound, fr.getFeature());
             }
         }
-        if (progressFileLock.tryLock()) {
-            saveProgressJson();
-            progressFileLock.unlock();
+    }
+
+    static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    static final TypeReference<Map<String, Object>> TYPE_REFERENCE = new TypeReference<Map<String, Object>>() {
+        // empty
+    };
+
+    private static Map toKarateJson(File file) {
+        String text = FileUtils.toString(file);
+        try {
+            return OBJECT_MAPPER.readValue(text, TYPE_REFERENCE);
+        } catch (Exception e) {
+            logger.warn("failed to convert json, will re-try: {}", e.getMessage());
+            return (Map) JsonUtils.fromJson(text);
         }
     }
 
     public Stream<FeatureResult> getFeatureResults() {
         return featureResultFiles.stream()
-                .map(file -> FeatureResult.fromKarateJson(workingDir, Json.of(FileUtils.toString(file)).asMap()));
+                .sorted()
+                .map(file -> FeatureResult.fromKarateJson(workingDir, toKarateJson(file)));
     }
 
     public Stream<ScenarioResult> getScenarioResults() {
@@ -308,7 +323,9 @@ public class Suite implements Runnable {
     }
 
     public ScenarioResult retryScenario(Scenario scenario) {
-        FeatureRuntime fr = FeatureRuntime.of(this, scenario.getFeature());
+        // remove any "fake" steps that might have been added before retrying
+        scenario.setSteps(scenario.getSteps().stream().filter(not(Step::isFake)).collect(Collectors.toList()));
+        FeatureRuntime fr = FeatureRuntime.of(this, new FeatureCall(scenario.getFeature()));
         ScenarioRuntime runtime = new ScenarioRuntime(fr, scenario);
         runtime.run();
         return runtime.result;
@@ -358,15 +375,6 @@ public class Suite implements Runnable {
 
     public long getFeaturesRemaining() {
         return futures.stream().filter(f -> !f.isDone()).count();
-    }
-
-    private File saveProgressJson() {
-        long remaining = getFeaturesRemaining() - 1;
-        Map<String, Object> map = Collections.singletonMap("featuresRemaining", remaining);
-        String json = JsonUtils.toJson(map);
-        File file = new File(reportDir + File.separator + "karate-progress-json.txt");
-        FileUtils.writeToFile(file, json);
-        return file;
     }
 
     public Results buildResults() {

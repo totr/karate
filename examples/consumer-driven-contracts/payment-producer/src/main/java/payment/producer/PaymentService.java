@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  *
@@ -25,11 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Configuration
 @EnableAutoConfiguration
 public class PaymentService {
-    
+
     @RestController
-    @RequestMapping("/payments")    
+    @RequestMapping("/payments")
     class PaymentController {
-        
+
         private final AtomicInteger counter = new AtomicInteger();
         private final Map<Integer, Payment> payments = new ConcurrentHashMap();
 
@@ -42,7 +44,7 @@ public class PaymentService {
         }
 
         @PutMapping("/{id:.+}")
-        public Payment update(@PathVariable int id, @RequestBody Payment payment) {
+        public Payment update(@PathVariable("id") int id, @RequestBody Payment payment) {
             payments.put(id, payment);
             return payment;
         }
@@ -53,22 +55,26 @@ public class PaymentService {
         }
 
         @GetMapping("/{id:.+}")
-        public Payment get(@PathVariable int id) {
-            return payments.get(id);
+        public Payment get(@PathVariable("id") int id) {
+            Payment payment = payments.get(id);
+            if (payment == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+            }
+            return payment;
         }
 
         @DeleteMapping("/{id:.+}")
-        public void delete(@PathVariable int id) {
+        public void delete(@PathVariable("id") int id) {
             Payment payment = payments.remove(id);
             if (payment == null) {
                 throw new RuntimeException("payment not found, id: " + id);
             }
-        }        
-        
+        }
+
     }
-    
-    public static ConfigurableApplicationContext start() {
-        return SpringApplication.run(PaymentService.class, new String[]{"--server.port=0"});
+
+    public static ConfigurableApplicationContext start(int port) {
+        return SpringApplication.run(PaymentService.class, new String[]{"--server.port=" + port});
     }
 
     public static void stop(ConfigurableApplicationContext context) {
@@ -83,6 +89,10 @@ public class PaymentService {
     @Bean
     public ServerStartedInitializingBean getInitializingBean() {
         return new ServerStartedInitializingBean();
-    }    
-    
+    }
+
+    public static void main(String[] args) {
+        start(8090);
+    }
+
 }

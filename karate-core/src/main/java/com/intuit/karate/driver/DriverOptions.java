@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -436,20 +436,20 @@ public class DriverOptions {
     }
 
     public static String selector(String locator, String contextNode) {
-        if (locator.startsWith("(")) {
+        if (locator.startsWith("(") && !locator.startsWith("(//")) {
             return locator; // pure js !
         }
         if (locator.startsWith("{")) {
             locator = preProcessWildCard(locator);
         }
-        if (locator.startsWith("/")) { // XPathResult.FIRST_ORDERED_NODE_TYPE = 9
+        if (locator.startsWith("/") || locator.startsWith("./") || locator.startsWith("../") || locator.startsWith("(//"))  { // XPathResult.FIRST_ORDERED_NODE_TYPE = 9
             if (locator.startsWith("/(")) { // hack for wildcard with index (see preProcessWildCard last line)
                 if (DOCUMENT.equals(contextNode)) {
                     locator = locator.substring(1);
                 } else {
                     locator = "(." + locator.substring(2);
                 }
-            } else if (!DOCUMENT.equals(contextNode)) {
+            } else if (!DOCUMENT.equals(contextNode) && !locator.startsWith(".")) {
                 locator = "." + locator; // evaluate relative to this node not root
             }
             return "document.evaluate(\"" + locator + "\", " + contextNode + ", null, 9, null).singleNodeValue";
@@ -600,7 +600,7 @@ public class DriverOptions {
         if (locator.startsWith("{")) {
             locator = preProcessWildCard(locator);
         }
-        boolean isXpath = locator.startsWith("/");
+        boolean isXpath = locator.startsWith("/") || locator.startsWith("./") || locator.startsWith("../") || locator.startsWith("(//");
         String selector;
         if (isXpath) { // XPathResult.ORDERED_NODE_ITERATOR_TYPE = 5
             selector = "document.evaluate(\"" + locator + "\", " + contextNode + ", null, 5, null)";

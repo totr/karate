@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,10 +25,12 @@ package com.intuit.karate.http;
 
 import com.linecorp.armeria.common.HttpResponse;
 import com.linecorp.armeria.common.HttpStatus;
+import com.linecorp.armeria.common.SessionProtocol;
 import com.linecorp.armeria.server.HttpService;
 import com.linecorp.armeria.server.Server;
 import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.server.cors.CorsService;
+import java.io.File;
 import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,14 +47,40 @@ public class HttpServer {
     private final CompletableFuture<Void> future;
     private final int port;
 
-    public static class Builder { // TODO
+    public static class Builder { // TODO fix code duplication with MockServer
 
         int port;
+        boolean ssl;
+        boolean local = true;
+        File certFile;
+        File keyFile;
         boolean corsEnabled;
         ServerHandler handler;
+        boolean keepOriginalHeaders;
 
-        public Builder port(int value) {
+        public Builder local(boolean value) {
+            local = value;
+            return this;
+        }
+
+        public Builder http(int value) {
             port = value;
+            return this;
+        }
+
+        public Builder https(int value) {
+            ssl = true;
+            port = value;
+            return this;
+        }
+
+        public Builder certFile(File value) {
+            certFile = value;
+            return this;
+        }
+
+        public Builder keyFile(File value) {
+            keyFile = value;
             return this;
         }
 
@@ -66,13 +94,48 @@ public class HttpServer {
             return this;
         }
 
+        public Builder keepOriginalHeaders(boolean value) {
+            keepOriginalHeaders = value;
+            return this;
+        }
+
         public HttpServer build() {
             ServerBuilder sb = Server.builder();
             sb.requestTimeoutMillis(0);
-            sb.http(port);
-            HttpService service = new HttpServerHandler(handler);
+            sb.maxRequestLength(0);
+            if (ssl) {
+                if (local) {
+                    sb.localPort(port, SessionProtocol.HTTPS);
+                } else {
+                    sb.https(port);
+                }
+                SslContextFactory factory = new SslContextFactory();
+                factory.setCertFile(certFile);
+                factory.setKeyFile(keyFile);
+                factory.build();
+                sb.tls(factory.getCertFile(), factory.getKeyFile());
+            } else {
+                if (local) {
+                    sb.localPort(port, SessionProtocol.HTTP);
+                } else {
+                    sb.http(port);
+                }
+            }
+
+            HttpServerHandler.Builder serverHandlerBuilder = HttpServerHandler.Builder.builder();
+            serverHandlerBuilder.handler(handler);
+
+            if (keepOriginalHeaders) {
+                HttpHeaderTracking headerTracking = new GenericHttpHeaderTracking();
+                sb.http1HeaderNaming(http2HeaderName ->
+                        headerTracking.getOriginalHeader(String.valueOf(http2HeaderName)));
+
+                serverHandlerBuilder.httpHeaderTracking(headerTracking);
+            }
+
+            HttpService service = serverHandlerBuilder.build();
             if (corsEnabled) {
-                service = service.decorate(CorsService.builderForAnyOrigin().newDecorator());
+                service = service.decorate(CorsService.builderForAnyOrigin().allowAllRequestHeaders(true).newDecorator());
             }
             sb.service("prefix:/", service);
             return new HttpServer(sb);

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,12 +23,7 @@
  */
 package com.intuit.karate.core;
 
-import com.intuit.karate.http.HttpServer;
-import com.intuit.karate.http.HttpServerHandler;
-import com.intuit.karate.http.Request;
-import com.intuit.karate.http.Response;
-import com.intuit.karate.http.ServerHandler;
-import com.intuit.karate.http.SslContextFactory;
+import com.intuit.karate.http.*;
 import com.linecorp.armeria.server.HttpService;
 import com.linecorp.armeria.server.Server;
 import com.linecorp.armeria.server.ServerBuilder;
@@ -67,8 +62,10 @@ public class MockServer extends HttpServer {
         File certFile;
         File keyFile;
         Map<String, Object> args;
-        String prefix = "";
-        
+        String prefix = null;
+        MockInterceptor interceptor = null;
+        boolean keepOriginalHeaders;
+
         public Builder watch(boolean value) {
             watch = value;
             return this;
@@ -96,7 +93,10 @@ public class MockServer extends HttpServer {
         }
 
         public Builder pathPrefix(String prefix) {
-            this.prefix = prefix.replaceAll("^/", "");
+            if (prefix.charAt(0) != '/') {
+                prefix = "/" + prefix;
+            }
+            this.prefix = prefix;
             return this;
         }
 
@@ -113,6 +113,16 @@ public class MockServer extends HttpServer {
             return this;
         }
 
+        public Builder interceptor(MockInterceptor value) {
+            interceptor = value;
+            return this;
+        }
+
+        public Builder keepOriginalHeaders(boolean value) {
+            keepOriginalHeaders = value;
+            return this;
+        }
+
         public MockServer build() {
             ServerBuilder sb = Server.builder();
             sb.requestTimeoutMillis(0);
@@ -126,43 +136,58 @@ public class MockServer extends HttpServer {
             } else {
                 sb.http(port);
             }
-            ServerHandler handler = watch ? new ReloadingMockHandler(features, args, prefix) : new MockHandler(features, args).withPrefix(prefix);
-            HttpService service = new HttpServerHandler(handler);
-            sb.service("prefix:/" + prefix, service);
+
+            ServerHandler handler = watch ? new ReloadingMockHandler(features, args, prefix, interceptor) : new MockHandler(prefix, features, args, interceptor);
+
+            HttpServerHandler.Builder serverHandlerBuilder = HttpServerHandler.Builder.builder();
+            serverHandlerBuilder.handler(handler);
+
+            if (keepOriginalHeaders) {
+                HttpHeaderTracking headerTracking = new GenericHttpHeaderTracking();
+                sb.http1HeaderNaming(http2HeaderName ->
+                        headerTracking.getOriginalHeader(String.valueOf(http2HeaderName)));
+
+                serverHandlerBuilder.httpHeaderTracking(headerTracking);
+            }
+
+            HttpService service = serverHandlerBuilder.build();
+            sb.service("prefix:" + (prefix == null ? "/" : prefix), service);
             return new MockServer(sb);
         }
 
     }
-    
+
     private static class ReloadingMockHandler implements ServerHandler {
-                
+
         private final Map<String, Object> args;
         private MockHandler handler;
         private final LinkedHashMap<File, Long> files = new LinkedHashMap<>();
         private final String prefix;
+        private final MockInterceptor interceptor;
 
-        public ReloadingMockHandler(List<Feature> features, Map<String, Object> args, String prefix) {
+        public ReloadingMockHandler(List<Feature> features, Map<String, Object> args, String prefix, MockInterceptor interceptor) {
             this.args = args;
             this.prefix = prefix;
+            this.interceptor = interceptor;
             for (Feature f : features) {
                 this.files.put(f.getResource().getFile(), f.getResource().getFile().lastModified());
             }
             logger.debug("watch mode init - {}", files);
-            handler = new MockHandler(features, args).withPrefix(prefix);
+            handler = new MockHandler(prefix, features, args, this.interceptor);
         }
 
         @Override
         public Response handle(Request request) {
             boolean reload = files.entrySet().stream().reduce(false, (modified, entry) -> entry.getKey().lastModified() > entry.getValue(), (a, b) -> a || b);
-            if(reload) {
+            if (reload) {
                 List<Feature> features = files.keySet().stream().map(f -> Feature.read(f)).collect(Collectors.toList());
-                handler = new MockHandler(features, args).withPrefix(prefix);
+                handler = new MockHandler(prefix, features, args, interceptor);
             }
             return handler.handle(request);
         }
-        
+
     }
-  
+
     public static Builder feature(String path) {
         return new Builder(Feature.read(path));
     }
@@ -174,9 +199,13 @@ public class MockServer extends HttpServer {
     public static Builder feature(Feature feature) {
         return new Builder(feature);
     }
+    
+    public static Builder featurePaths(List<String> paths) {
+        return new Builder(paths.stream().map(p -> Feature.read(p)).collect(Collectors.toList()));
+    }    
 
-    public static Builder features(String... path) {
-        return new Builder(Arrays.asList(path).stream().map(p -> Feature.read(p)).collect(Collectors.toList()));
+    public static Builder featurePaths(String... paths) {
+        return featurePaths(Arrays.asList(paths));
     }
 
     public static Builder featureFiles(List<File> features) {

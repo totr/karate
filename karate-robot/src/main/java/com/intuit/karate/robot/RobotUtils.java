@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -245,7 +245,7 @@ public class RobotUtils {
         key(',', KeyEvent.VK_COMMA);
         key('<', KeyEvent.VK_SHIFT, KeyEvent.VK_COMMA);
         key('.', KeyEvent.VK_PERIOD);
-        key('|', KeyEvent.VK_SHIFT, KeyEvent.VK_PERIOD);
+        key('>', KeyEvent.VK_SHIFT, KeyEvent.VK_PERIOD);
         key('/', KeyEvent.VK_SLASH);
         key('?', KeyEvent.VK_SHIFT, KeyEvent.VK_SLASH);
         //======================================================================

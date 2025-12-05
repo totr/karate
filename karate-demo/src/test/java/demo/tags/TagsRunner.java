@@ -1,20 +1,22 @@
 package demo.tags;
 
-import com.intuit.karate.junit4.Karate;
-import org.junit.BeforeClass;
-import org.junit.runner.RunWith;
+import com.intuit.karate.Results;
+import com.intuit.karate.Runner;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  *
- * @author pthomas3
+ * @author peter
  */
-@RunWith(Karate.class)
-public class TagsRunner {
-    
-    @BeforeClass
-    public static void beforeClass() {
-        // skip 'callSingle' in karate-config.js
-        System.setProperty("karate.env", "mock"); 
-    }    
-    
+class TagsRunner {
+
+    @Test
+    void testParallel() {
+        Results results = Runner.path("classpath:demo/tags")
+                .configDir("classpath:demo/tags")
+                .parallel(1);
+        assertTrue(results.getFailCount() == 0, results.getErrorMessages());
+    }
+
 }

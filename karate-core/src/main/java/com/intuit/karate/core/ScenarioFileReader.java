@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,6 @@ import com.intuit.karate.StringUtils;
 import com.intuit.karate.JsonUtils;
 import com.intuit.karate.resource.Resource;
 import com.intuit.karate.resource.ResourceUtils;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -49,7 +48,9 @@ public class ScenarioFileReader {
     public Object readFile(String text) {
         StringUtils.Pair pair = parsePathAndTags(text);
         text = pair.left;
-        if (isJsonFile(text) || isXmlFile(text)) {
+        if (text == null && pair.right != null && pair.right.startsWith("@")) {
+            return new FeatureCall(this.featureRuntime.featureCall.feature, pair.right, -1, null);
+        } else if (isJsonFile(text) || isXmlFile(text)) {
             String contents = readFileAsString(text);
             Variable temp = engine.evalKarateExpression(contents);
             return temp.getValue();
@@ -62,8 +63,7 @@ public class ScenarioFileReader {
         } else if (isFeatureFile(text)) {
             Resource fr = toResource(text);
             Feature feature = Feature.read(fr);
-            feature.setCallTag(pair.right);
-            return feature;
+            return new FeatureCall(feature, pair.right, -1, null);
         } else if (isCsvFile(text)) {
             String contents = readFileAsString(text);
             return JsonUtils.fromCsv(contents);
@@ -108,8 +108,15 @@ public class ScenarioFileReader {
     }
 
     private static StringUtils.Pair parsePathAndTags(String text) {
+        if (text.startsWith("@")) {
+            return new StringUtils.Pair(null, StringUtils.trimToEmpty(text));
+        }
         int pos = text.indexOf(".feature@");
         if (pos == -1) {
+            pos = text.indexOf(".feature?");
+            if (pos != -1) {
+                text = text.substring(0, pos + 8);
+            }
             text = StringUtils.trimToEmpty(text);
             return new StringUtils.Pair(text, null);
         } else {

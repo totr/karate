@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,9 +35,11 @@ import org.thymeleaf.templateresource.ITemplateResource;
  */
 public class KarateTemplateResource implements ITemplateResource {
 
+    private final String caller;
     private final Resource resource;
 
-    public KarateTemplateResource(Resource resource) {
+    public KarateTemplateResource(String caller, Resource resource) {
+        this.caller = caller;
         this.resource = resource;
     }
 
@@ -51,6 +53,10 @@ public class KarateTemplateResource implements ITemplateResource {
         return resource.getRelativePath();
     }
 
+    public String getCaller() {
+        return caller;
+    }        
+
     @Override
     public boolean exists() {
         return true;
@@ -63,7 +69,7 @@ public class KarateTemplateResource implements ITemplateResource {
 
     @Override
     public ITemplateResource relative(String relativeLocation) {
-        return new KarateTemplateResource(resource.resolve(relativeLocation));
+        return new KarateTemplateResource(relativeLocation, resource.resolve(relativeLocation));
     }
 
 }

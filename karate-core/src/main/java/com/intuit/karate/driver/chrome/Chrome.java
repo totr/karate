@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,7 +31,11 @@ import com.intuit.karate.core.ScenarioRuntime;
 import com.intuit.karate.shell.Command;
 import com.intuit.karate.driver.DevToolsDriver;
 import com.intuit.karate.driver.DriverOptions;
+import com.intuit.karate.http.HttpClientFactory;
 import com.intuit.karate.http.Response;
+
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -46,7 +50,9 @@ public class Chrome extends DevToolsDriver {
     public static final String DRIVER_TYPE = "chrome";
 
     public static final String DEFAULT_PATH_MAC = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-    public static final String DEFAULT_PATH_WIN = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe";
+    public static final String DEFAULT_PATH_WIN32 = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe";
+    public static final String DEFAULT_PATH_WIN64 = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    public static final String DEFAULT_PATH_WIN = Files.isRegularFile(Paths.get(DEFAULT_PATH_WIN64)) && Files.isReadable(Paths.get(DEFAULT_PATH_WIN64)) ? DEFAULT_PATH_WIN64 : DEFAULT_PATH_WIN32;
     public static final String DEFAULT_PATH_LINUX = "/usr/bin/google-chrome";
 
     public Chrome(DriverOptions options, Command command, String webSocketUrl) {
@@ -57,13 +63,14 @@ public class Chrome extends DevToolsDriver {
         DriverOptions options = new DriverOptions(map, sr, 9222,
                 FileUtils.isOsWindows() ? DEFAULT_PATH_WIN : FileUtils.isOsMacOsX() ? DEFAULT_PATH_MAC : DEFAULT_PATH_LINUX);
         options.arg("--remote-debugging-port=" + options.port);
+        options.arg("--remote-allow-origins=*");
         options.arg("--no-first-run");
         if (options.userDataDir != null) {
             options.arg("--user-data-dir=" + options.userDataDir);
         }
         options.arg("--disable-popup-blocking");
         if (options.headless) {
-            options.arg("--headless");
+            options.arg("--headless=new");
         }
         Command command = options.startProcess();
         Http http = options.getHttp();        
@@ -119,7 +126,7 @@ public class Chrome extends DevToolsDriver {
             options = new HashMap();
         }
         options.putIfAbsent("type", DRIVER_TYPE);
-        ScenarioRuntime runtime = FeatureRuntime.forTempUse().scenarios.next();
+        ScenarioRuntime runtime = FeatureRuntime.forTempUse(HttpClientFactory.DEFAULT).scenarios.next();
         ScenarioEngine.set(runtime.engine);
         return Chrome.start(options, runtime);
     }

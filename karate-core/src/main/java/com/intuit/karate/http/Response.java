@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,20 +26,19 @@ package com.intuit.karate.http;
 import com.intuit.karate.FileUtils;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.Json;
+import com.intuit.karate.JsonUtils;
 import com.intuit.karate.graal.JsArray;
-import com.intuit.karate.graal.JsList;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.graal.Methods;
 import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.Cookie;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.proxy.ProxyObject;
 import org.slf4j.Logger;
@@ -56,22 +55,25 @@ public class Response implements ProxyObject {
     public static final Response OK = new Response(200);
 
     private static final String BODY = "body";
+    private static final String BODY_BYTES = "bodyBytes";
     private static final String STATUS = "status";
     private static final String HEADER = "header";
     private static final String HEADERS = "headers";
-    private static final String HEADER_ENTRIES = "headerEntries";
+    private static final String HEADER_VALUES = "headerValues";
     private static final String DATA_TYPE = "dataType";
+    private static final String RESPONSE_TIME = "responseTime";
 
-    private static final String[] KEYS = new String[]{STATUS, HEADER, HEADERS, BODY, DATA_TYPE, HEADER_ENTRIES};
+    private static final String[] KEYS = new String[]{STATUS, HEADER, HEADERS, HEADER_VALUES, BODY, DATA_TYPE, BODY_BYTES, RESPONSE_TIME};
     private static final Set<String> KEY_SET = new HashSet(Arrays.asList(KEYS));
     private static final JsArray KEY_ARRAY = new JsArray(KEYS);
 
     private int status;
     private Map<String, List<String>> headers;
-    private byte[] body;
+    private Object body;
 
     private ResourceType resourceType;
     private int delay;
+    private long responseTime;
 
     public Response(int status) {
         this.status = status;
@@ -104,6 +106,15 @@ public class Response implements ProxyObject {
         this.delay = delay;
     }
 
+    public void setResponseTime(long responseTime) {
+        this.responseTime = responseTime;
+    }
+
+    public long getResponseTime() {
+        return responseTime;
+    }    
+       
+
     public Map<String, List<String>> getHeaders() {
         return headers;
     }
@@ -121,14 +132,19 @@ public class Response implements ProxyObject {
         }
         Map<String, Map> map = new HashMap();
         for (String value : values) {
-            Cookie cookie = ClientCookieDecoder.STRICT.decode(value);
-            map.put(cookie.name(), Cookies.toMap(cookie));
+            Cookie cookie = ClientCookieDecoder.LAX.decode(value);
+            if (cookie != null) { // can be null if cookie contains invalid characters
+                map.put(cookie.name(), Cookies.toMap(cookie));
+            }
         }
         return map;
     }
 
     public byte[] getBody() {
-        return body;
+        if (body instanceof byte[]) {
+            return (byte[]) body;
+        }
+        return JsonUtils.toBytes(body);
     }
 
     public void setBody(byte[] body) {
@@ -140,19 +156,18 @@ public class Response implements ProxyObject {
     }
 
     public String getBodyAsString() {
-        return body == null ? null : FileUtils.toString(body);
+        return body == null ? null : FileUtils.toString(getBody());
     }
 
     public Object getBodyConverted() {
-        ResourceType rt = getResourceType(); // derive if needed
-        if (rt != null && rt.isBinary()) {
+        if (body instanceof byte[]) {
+            ResourceType rt = getResourceType(); // derive if needed
+            if (rt != null && rt.isBinary()) {
+                return body;
+            }
+            return JsonUtils.fromBytes((byte[]) body, false, rt);
+        } else {
             return body;
-        }
-        try {
-            return JsValue.fromBytes(body, false, rt);
-        } catch (Exception e) {
-            logger.trace("failed to auto-convert response: {}", e);
-            return getBodyAsString();
         }
     }
 
@@ -233,27 +248,6 @@ public class Response implements ProxyObject {
         }
     };
 
-    private static final String KEY = "key";
-    private static final String VALUE = "value";
-
-    private final Supplier HEADER_ENTRIES_FUNCTION = () -> {
-        if (headers == null) {
-            return JsList.EMPTY;
-        }
-        List list = new ArrayList(headers.size());
-        headers.forEach((k, v) -> {
-            if (v == null || v.isEmpty()) {
-                // continue
-            } else {
-                Map map = new HashMap(2);
-                map.put(KEY, k);
-                map.put(VALUE, v.get(0));
-                list.add(map);
-            }
-        });
-        return JsValue.fromJava(list);
-    };
-
     @Override
     public Object getMember(String key) {
         switch (key) {
@@ -262,21 +256,38 @@ public class Response implements ProxyObject {
             case HEADER:
                 return HEADER_FUNCTION;
             case HEADERS:
-                return JsValue.fromJava(headers);
+                return JsValue.fromJava(JsonUtils.simplify(headers));
             case BODY:
-                return JsValue.fromJava(getBodyConverted());
+                if (body instanceof byte[]) {
+                    return JsValue.fromJava(getBodyConverted());
+                } else {
+                    return JsValue.fromJava(body);
+                }
             case DATA_TYPE:
                 ResourceType rt = getResourceType();
                 if (rt == null || rt == ResourceType.BINARY) {
                     return null;
                 }
                 return rt.name().toLowerCase();
-            case HEADER_ENTRIES:
-                return HEADER_ENTRIES_FUNCTION;
+            case HEADER_VALUES:
+                return (Function<String, List<String>>) this::getHeaderValues;
+            case BODY_BYTES:
+                return getBody();
+            case RESPONSE_TIME:
+                return responseTime;
             default:
                 logger.warn("no such property on response object: {}", key);
                 return null;
         }
+    }
+
+    public Map<String, Object> toMap() {
+        Map<String, Object> map = new HashMap();
+        map.put(STATUS, status);
+        map.put(HEADERS, JsonUtils.simplify(headers));
+        map.put(BODY, getBodyConverted());
+        map.put(RESPONSE_TIME, responseTime);
+        return map;
     }
 
     @Override
@@ -293,13 +304,13 @@ public class Response implements ProxyObject {
     public void putMember(String key, Value value) {
         switch (key) {
             case BODY:
-                body = JsValue.toBytes(value);
+                body = JsValue.toJava(value);
                 break;
             case STATUS:
                 status = value.asInt();
                 break;
             case HEADERS:
-                headers = (Map) JsValue.toJava(value);
+                setHeaders((Map) JsValue.toJava(value));
                 break;
             default:
                 logger.warn("put not supported on response object: {} - {}", key, value);
@@ -310,11 +321,12 @@ public class Response implements ProxyObject {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("[status: ").append(status);
+        sb.append(", responseTime: ").append(responseTime);
         if (resourceType != null && resourceType != ResourceType.BINARY) {
             sb.append(", type: ").append(resourceType);
         }
-        if (body != null) {
-            sb.append(", length: ").append(body.length);
+        if (body instanceof byte[]) {
+            sb.append(", length: ").append(((byte[]) body).length);
         }
         if (headers != null) {
             sb.append(", headers: ").append(headers);

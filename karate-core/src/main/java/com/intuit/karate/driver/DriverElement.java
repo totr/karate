@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -197,6 +197,12 @@ public class DriverElement implements Element {
     public Object script(String expression) {
         return driver.script(locator, expression);
     }
+    
+    @Override
+    public Object scriptAll(String relative, String expression) {
+        String script = driver.getOptions().scriptAllSelector(relative, expression, thisLocator());       
+        return driver.script(script);
+    }    
 
     private String thisLocator() {
         String thisRef = (String) driver.script(locator, DriverOptions.KARATE_REF_GENERATOR);

@@ -1,35 +1,50 @@
 dev:
-mvn versions:set -DnewVersion=2.0.0
-mvn versions:commit
+====
+mvn versions:set versions:commit -DnewVersion=2.0.0
 
-main:
-mvn versions:set -DnewVersion=@@@
-(edit archetype karate.version)
-(edit README.md maven 3 places)
+cve check
+=========
+(do mvn versions:set to what should show in the report)
+mvn verify -P depcheck -pl karate-core -DnvdApiKey=YOUR_KEY
 
-(edit examples/gatling/build.gradle)
-(edit examples/jobserver/build.gradle)
-(edit examples/*/pom.xml)
-(edit jbang-catalog.json)
-mvn versions:commit
-mvn clean deploy -P pre-release,release
+(save the above report)
 
-jar:
-mvn clean package -P fatjar -f karate-core/pom.xml
-(upload to github release notes)
+prod:
+=====
+mvn versions:set versions:commit -DnewVersion=@@@
 
-robot:
-mvn package -P fatjar -f karate-robot/pom.xml
-(upload to github release notes)
+# edit archetype karate.version
+# edit README.md maven 3 places
+# edit examples/gatling/build.gradle
+# edit examples/*/pom.xml
 
-docker:
-make sure docker is started and is running !
+# make release using [develop]
+# using github action: https://github.com/karatelabs/karate/actions/workflows/maven-release.yml
+# once release passes, download artifacts zip
+# make sure the release tag is against the right branch (master or develop)
+# upload following to github release notes
+    karate-core/target/karate-XXX.zip
+    karate-core/target/karate-XXX.jar
+    karate-robot/target/karate-robot-XXX.jar
+
+(save the sonatype report)
+
+github
+======
+# edit https://github.com/karatelabs/jbang-catalog
+# edit https://github.com/karatelabs/karate-template
+# edit https://github.com/karatelabs/karate-todo
+
+docker (deprecated)
+===================
+# make sure docker is started and is running]
 rm -rf ~/.m2/repository/com/intuit/karate
 rm -rf karate-docker/karate-chrome/target
 mvn clean install -P pre-release -DskipTests
 ./build-docker.sh
 
-docker tag karate-chrome ptrthomas/karate-chrome:latest
-docker tag karate-chrome ptrthomas/karate-chrome:@@@
+docker tag karate-chrome karatelabs/karate-chrome:@@@
+docker tag karate-chrome karatelabs/karate-chrome:latest
 
-docker push ptrthomas/karate-chrome:@@@
+docker push karatelabs/karate-chrome:@@@
+docker push karatelabs/karate-chrome:latest

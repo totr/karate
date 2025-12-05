@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,35 +23,26 @@
  */
 package com.intuit.karate.core;
 
-import com.intuit.karate.FileUtils;
-import com.intuit.karate.Json;
-import com.intuit.karate.JsonUtils;
-import com.intuit.karate.KarateException;
-import com.intuit.karate.Logger;
-import com.intuit.karate.Match;
-import com.intuit.karate.RuntimeHook;
-import com.intuit.karate.StringUtils;
-import com.intuit.karate.XmlUtils;
+import com.intuit.karate.*;
 import com.intuit.karate.driver.Driver;
 import com.intuit.karate.driver.DriverOptions;
 import com.intuit.karate.driver.Key;
 import com.intuit.karate.graal.JsEngine;
-import com.intuit.karate.graal.JsExecutable;
 import com.intuit.karate.graal.JsFunction;
 import com.intuit.karate.graal.JsLambda;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.http.*;
 import com.intuit.karate.resource.Resource;
+import com.intuit.karate.resource.ResourceResolver;
 import com.intuit.karate.shell.Command;
+import com.intuit.karate.template.KarateEngineContext;
 import com.intuit.karate.template.KarateTemplateEngine;
 import com.intuit.karate.template.TemplateUtils;
 import com.jayway.jsonpath.PathNotFoundException;
 import org.graalvm.polyglot.Value;
-import org.w3c.dom.Attr;
-import org.w3c.dom.Document;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
+import org.slf4j.LoggerFactory;
+import org.w3c.dom.*;
 
 import java.io.File;
 import java.io.InputStream;
@@ -63,10 +54,10 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.slf4j.LoggerFactory;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- *
  * @author pthomas3
  */
 public class ScenarioEngine {
@@ -75,8 +66,6 @@ public class ScenarioEngine {
 
     private static final String KARATE = "karate";
     private static final String READ = "read";
-    private static final String DRIVER = "driver";
-    private static final String ROBOT = "robot";
     private static final String KEY = "Key";
 
     public static final String RESPONSE = "response";
@@ -92,6 +81,7 @@ public class ScenarioEngine {
     public static final String REQUEST = "request";
     public static final String REQUEST_URL_BASE = "requestUrlBase";
     public static final String REQUEST_URI = "requestUri";
+    public static final String REQUEST_PATH = "requestPath";
     private static final String REQUEST_PARAMS = "requestParams";
     public static final String REQUEST_METHOD = "requestMethod";
     public static final String REQUEST_HEADERS = "requestHeaders";
@@ -111,11 +101,6 @@ public class ScenarioEngine {
 
     protected JsEngine JS;
 
-    // only used by mock server
-    public ScenarioEngine(ScenarioRuntime runtime, Map<String, Variable> vars) {
-        this(runtime.engine.config, runtime, vars, runtime.logger);
-    }
-
     public ScenarioEngine(Config config, ScenarioRuntime runtime, Map<String, Variable> vars, Logger logger) {
         this.config = config;
         this.runtime = runtime;
@@ -127,8 +112,8 @@ public class ScenarioEngine {
         this.logger = logger;
     }
 
-    public static ScenarioEngine forTempUse() {
-        FeatureRuntime fr = FeatureRuntime.forTempUse();
+    public static ScenarioEngine forTempUse(HttpClientFactory hcf) {
+        FeatureRuntime fr = FeatureRuntime.forTempUse(hcf);
         ScenarioRuntime sr = new ScenarioIterator(fr).first();
         sr.engine.init();
         return sr.engine;
@@ -146,6 +131,10 @@ public class ScenarioEngine {
 
     protected static void remove() {
         THREAD_LOCAL.remove();
+    }
+
+    public JsEngine getJsEngine() {
+        return JS;
     }
 
     // engine ==================================================================
@@ -186,7 +175,11 @@ public class ScenarioEngine {
     }
 
     public void remove(String name, String path) {
-        set(name, path, null, true, false);
+        try {
+            set(name, path, null, true, false);
+        } catch (Exception e) {
+            logger.warn("remove failed: {}", e.getMessage());
+        }
     }
 
     public void table(String name, List<Map<String, String>> rows) {
@@ -242,20 +235,35 @@ public class ScenarioEngine {
         evalJs("karate.log('[print]'," + exp + ")");
     }
 
-    public void invokeAfterHookIfConfigured(boolean afterFeature) {
+    public void invokeAfterHookIfConfigured(AfterHookType hookType) {
+        // Do not call hooks on "called" scenarios/features
         if (runtime.caller.depth > 0) {
             return;
         }
-        Variable v = afterFeature ? config.getAfterFeature() : config.getAfterScenario();
+
+        // Get hook variable based on type
+        Variable v;
+        switch (hookType) {
+            case AFTER_SCENARIO: 
+                v = config.getAfterScenario();
+                break;
+            case AFTER_OUTLINE: 
+                v = config.getAfterScenarioOutline();
+                break;
+            case AFTER_FEATURE: 
+                v = config.getAfterFeature();
+                break;
+            default: return;
+        }
+        
         if (v.isJsOrJavaFunction()) {
-            if (afterFeature) {
+            if (hookType == AfterHookType.AFTER_FEATURE) {
                 ScenarioEngine.set(this); // for any bridge / js to work
             }
             try {
                 executeFunction(v);
             } catch (Exception e) {
-                String prefix = afterFeature ? "afterFeature" : "afterScenario";
-                logger.warn("{} hook failed: {}", prefix, e + "");
+                logger.warn("{} hook failed: {}", hookType.getPrefix(), e + "");
             }
         }
     }
@@ -283,7 +291,8 @@ public class ScenarioEngine {
     // http ====================================================================
     //
     protected HttpRequestBuilder requestBuilder; // see init() method
-    private HttpRequest request;
+    private HttpRequest httpRequest;
+    private Request request; // used only for mocks
     private Response response;
     private Config config;
 
@@ -295,14 +304,29 @@ public class ScenarioEngine {
     // callonce routine is one example
     public void setConfig(Config config) {
         this.config = config;
-        config.attach(JS);
         if (requestBuilder != null) {
             requestBuilder.client.setConfig(config);
         }
     }
 
-    public HttpRequest getRequest() {
-        return request;
+    public void setRequest(Request request) {
+        this.request = request;
+    }
+
+    public Request getRequest() {
+        if (request != null) {
+            return request;
+        }
+        if (httpRequest != null) {
+            request = httpRequest.toRequest();
+            request.processBody();
+            return request;
+        }
+        return null;
+    }
+
+    public HttpRequest getHttpRequest() {
+        return httpRequest;
     }
 
     public Response getResponse() {
@@ -375,7 +399,7 @@ public class ScenarioEngine {
     }
 
     public void param(String name, String exp) {
-        Variable var = evalJs(exp);
+        Variable var = evalKarateExpression(exp);
         if (var.isList()) {
             requestBuilder.param(name, var.<List>getValue());
         } else {
@@ -452,7 +476,10 @@ public class ScenarioEngine {
     }
 
     public void multipartField(String name, String value) {
-        multipartFile(name, value);
+        Variable v = evalKarateExpression(value);
+        Map map = new HashMap();
+        map.put("value", v.getValue());
+        multiPartInternal(name, map);
     }
 
     public void multipartFields(String exp) {
@@ -463,6 +490,9 @@ public class ScenarioEngine {
         Map<String, Object> map = new HashMap();
         if (name != null) {
             map.put("name", name);
+        }
+        if (value instanceof Number) {
+            value = value.toString();
         }
         if (value instanceof Map) {
             map.putAll((Map) value);
@@ -562,32 +592,39 @@ public class ScenarioEngine {
         if (headers != null) {
             requestBuilder.headers(headers);
         }
-        request = requestBuilder.build();
+        httpRequest = requestBuilder.build();
         String perfEventName = null; // acts as a flag to report perf if not null
         if (runtime.perfMode) {
-            perfEventName = runtime.featureRuntime.perfHook.getPerfEventName(request, runtime);
+            perfEventName = runtime.featureRuntime.perfHook.getPerfEventName(httpRequest, runtime);
         }
         long startTime = System.currentTimeMillis();
-        request.setStartTimeMillis(startTime); // this may be fine-adjusted by actual http client
-        if (hooks != null) {
-            hooks.forEach(h -> h.beforeHttpCall(request, runtime));
-        }
+        httpRequest.setStartTime(startTime); // this may be fine-adjusted by actual http client
+        Collection<RuntimeHook> allHooks = getRuntimeHooks();
+        allHooks.forEach(h -> h.beforeHttpCall(httpRequest, runtime));
         try {
-            response = requestBuilder.client.invoke(request);
+            response = requestBuilder.client.invoke(httpRequest);
         } catch (Exception e) {
             long endTime = System.currentTimeMillis();
             long responseTime = endTime - startTime;
-            String message = "http call failed after " + responseTime + " milliseconds for url: " + request.getUrl();
+            String message = "http call failed after " + responseTime + " milliseconds for url: " + httpRequest.getUrl();
             logger.error(e.getMessage() + ", " + message);
+            if (logger.isTraceEnabled()) {
+                String stacktrace = StringUtils.throwableToString(e);
+                if (stacktrace != null) {
+                    logger.trace(stacktrace);
+                }
+            }
             if (perfEventName != null) {
                 PerfEvent pe = new PerfEvent(startTime, endTime, perfEventName, 0);
                 capturePerfEvent(pe); // failure flag and message should be set by logLastPerfEvent()
             }
-            throw new KarateException(message, e);
+            throw new KarateException(message + "\n" + e.getMessage(), e);
         }
-        if (hooks != null) {
-            hooks.forEach(h -> h.afterHttpCall(request, response, runtime));
-        }
+        startTime = httpRequest.getStartTime(); // in case it was re-adjusted by http client
+        final long endTime = httpRequest.getEndTime();
+        final long responseTime = endTime - startTime;
+        response.setResponseTime(responseTime);
+        allHooks.forEach(h -> h.afterHttpCall(httpRequest, response, runtime));
         byte[] bytes = response.getBody();
         Object body;
         String responseType;
@@ -597,7 +634,7 @@ public class ScenarioEngine {
             body = bytes;
         } else {
             try {
-                body = JsValue.fromBytes(bytes, true, resourceType);
+                body = JsonUtils.fromBytes(bytes, true, resourceType);
             } catch (Exception e) {
                 body = FileUtils.toString(bytes);
                 logger.warn("auto-conversion of response failed: {}", e.getMessage());
@@ -610,6 +647,8 @@ public class ScenarioEngine {
                 responseType = "string";
             }
         }
+        setHiddenVariable(REQUEST_TIME_STAMP, startTime);
+        setVariable(RESPONSE_TIME, responseTime);
         setVariable(RESPONSE_STATUS, response.getStatus());
         setVariable(RESPONSE, body);
         if (config.isLowerCaseResponseHeaders()) {
@@ -622,14 +661,16 @@ public class ScenarioEngine {
         cookies = response.getCookies();
         updateConfigCookies(cookies);
         setHiddenVariable(RESPONSE_COOKIES, cookies);
-        startTime = request.getStartTimeMillis(); // in case it was re-adjusted by http client
-        long endTime = request.getEndTimeMillis();
-        setHiddenVariable(REQUEST_TIME_STAMP, startTime);
-        setHiddenVariable(RESPONSE_TIME, endTime - startTime);
         if (perfEventName != null) {
             PerfEvent pe = new PerfEvent(startTime, endTime, perfEventName, response.getStatus());
             capturePerfEvent(pe);
         }
+    }
+
+    private List<RuntimeHook> getRuntimeHooks() {
+        return Stream.concat(hooks.stream(), Stream.of(requestBuilder.hook()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     private void httpInvokeWithRetries() {
@@ -648,9 +689,10 @@ public class ScenarioEngine {
                     throw new RuntimeException(e);
                 }
             }
-            httpInvokeOnce();
+
             Variable v;
             try {
+                httpInvokeOnce();
                 v = evalKarateExpression(requestBuilder.getRetryUntil());
             } catch (Exception e) {
                 logger.warn("retry condition evaluation failed: {}", e.getMessage());
@@ -671,7 +713,7 @@ public class ScenarioEngine {
     public void status(int status) {
         if (status != response.getStatus()) {
             // make sure log masking is applied
-            String message = HttpLogger.getStatusFailureMessage(status, config, request, response);
+            String message = HttpLogger.getStatusFailureMessage(status, config, httpRequest, response);
             setFailedReason(new KarateException(message));
         }
     }
@@ -696,13 +738,62 @@ public class ScenarioEngine {
         }
     }
 
+    // non-http ================================================================
+    //
+    List<Channel> channels;
+
+    private static String getFactory(String channelType) {
+        switch (channelType) {
+            case Config.KAFKA:
+                return "io.karatelabs.kafka.KafkaChannelFactory";
+            case Config.GRPC:
+                return "io.karatelabs.grpc.GrpcChannelFactory";
+            case Config.WEBSOCKET:
+                return "io.karatelabs.websocket.WebsocketChannelFactory";
+            case Config.WEBHOOK:
+                return "io.karatelabs.webhook.WebhookChannelFactory";
+            default:
+                throw new RuntimeException("unknown channel type: " + channelType);
+        }
+    }
+
+    protected Object channelSession(String type) {
+        String factoryClass = getFactory(type);
+        try {
+            Class<?> clazz = Class.forName(factoryClass);
+            ChannelFactory factory = (ChannelFactory) clazz.getDeclaredConstructor().newInstance();
+            Map<String, Object> options = config.getCustomOptions().get(type);
+            Channel channel = factory.create(runtime, options);
+            if (channels == null) {
+                channels = new ArrayList<>();
+            }
+            channels.add(channel);
+            return channel.init(this.runtime);
+        } catch (KarateException ke) {
+            throw ke;
+        } catch (Exception e) {
+            String message;
+            if (e instanceof ClassNotFoundException) {
+                message = "cannot instantiate [" + type + "], is 'karate-" + type + "' included as a maven / gradle dependency ?";
+            } else {
+                message = e.getMessage();
+            }
+            logger.error(message);
+            throw new RuntimeException(message, e);
+        }
+    }
+
     // http mock ===============================================================
     //
     public void mockProceed(String requestUrlBase) {
-        String urlBase = requestUrlBase == null ? vars.get(REQUEST_URL_BASE).getValue() : requestUrlBase;
-        String uri = vars.get(REQUEST_URI).getValue();
-        String url = uri == null ? urlBase : urlBase + "/" + uri;
-        requestBuilder.url(url);
+        String urlBase;
+        if (requestUrlBase == null) {
+            urlBase = vars.get(REQUEST_URL_BASE).getValue();
+        } else {
+            urlBase = requestUrlBase;
+        }
+        requestBuilder.url(urlBase);
+        requestBuilder.path(vars.get(REQUEST_PATH).getValue());
         requestBuilder.params(vars.get(REQUEST_PARAMS).getValue());
         requestBuilder.method(vars.get(REQUEST_METHOD).getValue());
         requestBuilder.headers(vars.get(REQUEST_HEADERS).<Map>getValue());
@@ -735,6 +826,7 @@ public class ScenarioEngine {
 
     public WebSocketClient webSocket(WebSocketOptions options) {
         WebSocketClient webSocketClient = new WebSocketClient(options, logger);
+        webSocketClient.setEngine(this);
         if (webSocketClients == null) {
             webSocketClients = new ArrayList();
         }
@@ -742,7 +834,7 @@ public class ScenarioEngine {
         return webSocketClient;
     }
 
-    public synchronized void signal(Object result) {
+    public void signal(Object result) {
         SIGNAL.complete(result);
     }
 
@@ -753,13 +845,14 @@ public class ScenarioEngine {
         Object listenResult = null;
         try {
             listenResult = SIGNAL.get(timeout, TimeUnit.MILLISECONDS);
+            Thread.sleep(100); // IMPORTANT, else graal js complains
         } catch (Exception e) {
             logger.error("listen timed out: {}", e + "");
         }
-        synchronized (JS.context) {
+        SIGNAL = new CompletableFuture();
+        synchronized (JsFunction.LOCK) {
             setHiddenVariable(LISTEN_RESULT, listenResult);
             logger.debug("exit listen state with result: {}", listenResult);
-            SIGNAL = new CompletableFuture();
         }
     }
 
@@ -801,12 +894,12 @@ public class ScenarioEngine {
         if (redirectErrorStream != null) {
             command.setRedirectErrorStream(redirectErrorStream);
         }
-        Value funOut = (Value) options.get("listener");
-        if (funOut != null && funOut.canExecute()) {
+        Value funOut = Value.asValue(options.get("listener"));
+        if (funOut.canExecute()) {
             command.setListener(new JsLambda(funOut));
         }
-        Value funErr = (Value) options.get("errorListener");
-        if (funErr != null && funErr.canExecute()) {
+        Value funErr = Value.asValue(options.get("errorListener"));
+        if (funErr.canExecute()) {
             command.setErrorListener(new JsLambda(funErr));
         }
         Boolean start = (Boolean) options.get("start");
@@ -841,7 +934,7 @@ public class ScenarioEngine {
         // re-create driver within a test if needed
         // but user is expected to call quit() OR use the driver keyword with a JSON argument
         if (driver == null || driver.isTerminated() || v.isMap()) {
-            Map<String, Object> options = config.getDriverOptions();
+            Map<String, Object> options = config.getCustomOptions().get(Config.DRIVER);
             if (options == null) {
                 options = new HashMap();
             }
@@ -859,7 +952,7 @@ public class ScenarioEngine {
     public void robot(String exp) {
         Variable v = evalKarateExpression(exp);
         if (robot == null) {
-            Map<String, Object> options = config.getRobotOptions();
+            Map<String, Object> options = config.getCustomOptions().get(Config.ROBOT);
             if (options == null) {
                 options = new HashMap();
             }
@@ -870,7 +963,7 @@ public class ScenarioEngine {
             }
             try {
                 Class clazz = Class.forName("com.intuit.karate.robot.RobotFactory");
-                PluginFactory factory = (PluginFactory) clazz.newInstance();
+                PluginFactory factory = (PluginFactory) clazz.getDeclaredConstructor().newInstance();
                 robot = factory.create(runtime, options);
             } catch (KarateException ke) {
                 throw ke;
@@ -889,24 +982,24 @@ public class ScenarioEngine {
 
     public void setDriver(Driver driver) {
         this.driver = driver;
-        setHiddenVariable(DRIVER, driver);
+        setHiddenVariable(Config.DRIVER, driver);
         if (robot != null) {
             logger.warn("'robot' is active, use 'driver.' prefix for driver methods");
             return;
         }
-        autoDef(driver, DRIVER);
+        autoDef(driver, Config.DRIVER);
         setHiddenVariable(KEY, Key.INSTANCE);
     }
 
     public void setRobot(Plugin robot) { // TODO unify
         this.robot = robot;
         // robot.setContext(this);
-        setHiddenVariable(ROBOT, robot);
+        setHiddenVariable(Config.ROBOT, robot);
         if (driver != null) {
             logger.warn("'driver' is active, use 'robot.' prefix for robot methods");
             return;
         }
-        autoDef(robot, ROBOT);
+        autoDef(robot, Config.ROBOT);
         setHiddenVariable(KEY, Key.INSTANCE);
     }
 
@@ -946,6 +1039,11 @@ public class ScenarioEngine {
             if (robot != null) {
                 robot.afterScenario();
             }
+            if (channels != null) {
+                for (Channel channel : channels) {
+                    channel.afterScenario();
+                }
+            }
         }
     }
 
@@ -963,6 +1061,44 @@ public class ScenarioEngine {
     //    
     private KarateTemplateEngine templateEngine;
 
+    private ResourceResolver resourceResolver;
+
+    public void setResourceResolver(ResourceResolver resourceResolver) {
+        this.resourceResolver = resourceResolver;
+    }
+
+    private ResourceResolver getResourceResolver() {
+        if (resourceResolver != null) {
+            return resourceResolver;
+        }
+        String prefixedPath = runtime.featureRuntime.rootFeature.featureCall.feature.getResource().getPrefixedParentPath();
+        return new ResourceResolver(prefixedPath);
+    }
+
+    public String renderHtml(Map<String, Object> options) {
+        String path = (String) options.get("read");
+        String html;
+        if (path == null) {
+            html = (String) options.get("html");
+            if (html == null) {
+                logger.warn("'read' or 'html' property is mandatory: {}", options);
+                return null;
+            } else { // TODO do we cache this
+                KarateTemplateEngine stringEngine = TemplateUtils.forStrings(JS, getResourceResolver());
+                return stringEngine.process(html);
+            }
+        }
+        if (templateEngine == null) {
+            templateEngine = TemplateUtils.forResourceResolver(JS, getResourceResolver());
+        }
+        KarateEngineContext old = KarateEngineContext.get();
+        try {
+            return templateEngine.process(path);
+        } finally {
+            KarateEngineContext.set(old);
+        }
+    }
+
     public void doc(String exp) {
         Variable v = evalKarateExpression(exp);
         if (v.isString()) {
@@ -976,20 +1112,91 @@ public class ScenarioEngine {
     }
 
     protected String docInternal(Map<String, Object> options) {
-        String path = (String) options.get("read");
-        if (path == null) {
-            logger.warn("doc json missing 'read' property: {}", options);
-            return null;
-        }
-        if (templateEngine == null) {
-            String prefixedPath = runtime.featureRuntime.rootFeature.feature.getResource().getPrefixedParentPath();
-            templateEngine = TemplateUtils.forResourceRoot(JS, prefixedPath);
-        }
-        String html = templateEngine.process(path);
-        if (!runtime.reportDisabled) {
+        String html = renderHtml(options);
+        if (html != null && !runtime.reportDisabled) {
             runtime.embed(FileUtils.toBytes(html), ResourceType.HTML);
         }
         return html;
+    }
+
+    // compareImage =====================================================================
+    //
+    public void compareImage(String exp) {
+        Variable v = evalKarateExpression(exp);
+        if (!v.isMap()) {
+            throw new RuntimeException("invalid image comparison params: expected map");
+        }
+
+        compareImageInternal(v.getValue());
+    }
+
+    protected Map<String, Object> compareImageInternal(Map<String, Object> params) {
+        Map<String, Object> options = getImageOptions(params.get("options"), "options");
+        byte[] baselineImg = getImageBytes(params, "baseline");
+        byte[] latestImg = getImageBytes(params, "latest");
+
+        Map<String, Object> defaultOptions = getImageOptions(config.getImageComparisonOptions(), "defaultOptions");
+        boolean embedUI = !Boolean.TRUE.equals(defaultOptions.get("hideUiOnSuccess"));
+
+        Map<String, Object> result = null;
+        try {
+            result = ImageComparison.compare(baselineImg, latestImg, options, defaultOptions);
+        } catch (ImageComparison.MismatchException e) {
+            logger.error("image comparison failed: {}", e.getMessage());
+            embedUI = true;
+            result = e.data;
+            if (!Boolean.TRUE.equals(defaultOptions.get("mismatchShouldPass"))) {
+                throw e;
+            }
+        } finally {
+            if (embedUI) {
+                String diffJS = "newDiffUI(document.currentScript,"
+                        + JsonUtils.toJson(result) + ","
+                        + JsonUtils.toJson(options) + ","
+                        + getImageHookFunction(options, defaultOptions, "onShowRebase") + ","
+                        + getImageHookFunction(options, defaultOptions, "onShowConfig")
+                        + ")";
+
+                runtime.embed(JsonUtils.toBytes(diffJS), ResourceType.DEFERRED_JS);
+            }
+        }
+
+        return result;
+    }
+
+    private byte[] getImageBytes(Map<String, Object> params, String paramName) {
+        Object img = params.get(paramName);
+        if (img == null) {
+            return null;
+        }
+
+        if (img instanceof String) {
+            return fileReader.readFileAsBytes((String) img);
+        }
+
+        if (img instanceof byte[]) {
+            return (byte[]) img;
+        }
+
+        throw new RuntimeException(
+                "invalid image comparison options: expected " + paramName + " to be one of string|byte[]");
+    }
+
+    private Map<String, Object> getImageOptions(Object obj, String objName) {
+        if (obj == null) {
+            return new HashMap<>();
+        }
+
+        if (obj instanceof Map) {
+            return (Map<String, Object>) obj;
+        }
+
+        throw new RuntimeException("invalid image comparison " + objName + ": expected map");
+    }
+
+    private String getImageHookFunction(Map<String, Object> options, Map<String, Object> defaultOptions, String name) {
+        Object fn = options.containsKey(name) ? options.get(name) : defaultOptions.get(name);
+        return fn == null ? null : fn.toString();
     }
 
     //==========================================================================        
@@ -997,37 +1204,19 @@ public class ScenarioEngine {
     public void init() { // not in constructor because it has to be on Runnable.run() thread 
         JS = JsEngine.local();
         logger.trace("js context: {}", JS);
-        // to avoid re-processing objects that have cyclic dependencies
-        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap());
-        runtime.magicVariables.forEach((k, v) -> {
-            // even hidden variables may need pre-processing
-            // for e.g. the __arg may contain functions that originated in a different js context
-            Object o = recurseAndAttach(k, v, seen);
-            JS.put(k, o == null ? v : o); // attach returns null if "not dirty"
-        });
-        vars.forEach((k, v) -> {
-            // re-hydrate any functions from caller or background  
-            Object o = recurseAndAttach(k, v.getValue(), seen);
-            // note that we don't update the vars !
-            // if we do, any "bad" out-of-context values will crash the constructor of Variable
-            // it is possible the vars are detached / re-used later, so we kind of defer the inevitable
-            JS.put(k, o == null ? v.getValue() : o); // attach returns null if "not dirty"
-        });
+        runtime.magicVariables.forEach((k, v) -> JS.put(k, v));
+        vars.forEach((k, v) -> JS.put(k, v.getValue()));
         if (runtime.caller.arg != null && runtime.caller.arg.isMap()) {
             // add the call arg as separate "over ride" variables
             Map<String, Object> arg = runtime.caller.arg.getValue();
-            recurseAndAttach("", arg, seen); // since arg is a map, it will not be cloned
-            arg.forEach((k, v) -> {
-                vars.put(k, new Variable(v));
-                JS.put(k, v);
-            });
+            setVariables(arg);
         }
         JS.put(KARATE, bridge);
         JS.put(READ, readFunction);
-        HttpClient client = runtime.featureRuntime.suite.clientFactory.create(this);
-        // edge case: can be set by dynamic scenario outline background
-        // or be left as-is because a callonce triggered init()
+        // edge case: can be left as-is because a callonce triggered init()
         if (requestBuilder == null) {
+            // note that the http builder is always reset when a "call" occurs
+            HttpClient client = runtime.featureRuntime.suite.clientFactory.create(this);
             requestBuilder = new HttpRequestBuilder(client);
         }
         // TODO improve life cycle and concept of shared objects
@@ -1042,173 +1231,10 @@ public class ScenarioEngine {
         }
     }
 
-    protected Map<String, Variable> detachVariables() {
-        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap());
-        Map<String, Variable> detached = new HashMap(vars.size());
-        vars.forEach((k, v) -> {
-            Object o = recurseAndDetachAndShallowClone(k, v.getValue(), seen);
-            detached.put(k, new Variable(o));
-        });
-        return detached;
-    }
-    
-    // callSingle
-    protected Object recurseAndAttachAndShallowClone(Object o) {
-        return recurseAndAttachAndShallowClone(o, Collections.newSetFromMap(new IdentityHashMap()));
-    }
-
-    // callonce
-    protected Object recurseAndAttachAndShallowClone(Object o, Set<Object> seen) {
-        if (o instanceof List) {
-            o = new ArrayList((List) o);
-        } else if (o instanceof Map) {
-            o = new LinkedHashMap((Map) o);
-        }
-        Object result = recurseAndAttach("", o, seen);
-        return result == null ? o : result;
-    }    
-
-    private Object recurseAndAttach(String name, Object o, Set<Object> seen) {
-        if (o instanceof Value) {
-            Value value = Value.asValue(o);
-            try {
-                if (value.canExecute()) {
-                    if (value.isMetaObject()) { // js function
-                        return attach(value);
-                    } else { // java function
-                        return new JsExecutable(value);
-                    }
-                } else { // anything else, including java-type references
-                    return value;
-                }
-            } catch (Exception e) {
-                logger.warn("[*** attach ***] ignoring non-json value: '{}' - {}", name, e.getMessage());
-                // here we try our luck and hope that graal does not notice !
-                return value;
-            }
-        }
-        if (o instanceof Class) {
-            Class clazz = (Class) o;
-            Value value = JS.evalForValue("Java.type('" + clazz.getCanonicalName() + "')");
-            return value;
-        } else if (o instanceof JsFunction) {
-            JsFunction jf = (JsFunction) o;
-            try {
-                return attachSource(jf.source);
-            } catch (Exception e) {
-                logger.warn("[*** attach ***] ignoring js-function: '{}' - {}", name, e.getMessage());
-                return Value.asValue(null); // make sure we return a "dirty" value to force an update
-            }
-        } else if (o instanceof List) {
-            if (seen.add(o)) {
-                List list = (List) o;
-                int count = list.size();
-                try {
-                    for (int i = 0; i < count; i++) {
-                        Object child = list.get(i);
-                        Object childResult = recurseAndAttach(name + "[" + i + "]", child, seen);
-                        if (childResult != null) {
-                            list.set(i, childResult);
-                        }
-                    }
-                } catch (Exception e) {
-                    logger.warn("attach - immutable list: {}", name);
-                }
-            }
-            return null;
-        } else if (o instanceof Map) {
-            if (seen.add(o)) {
-                Map<String, Object> map = (Map) o;
-                try {
-                    map.forEach((k, v) -> {
-                        Object childResult = recurseAndAttach(name + "." + k, v, seen);
-                        if (childResult != null) {
-                            map.put(k, childResult);
-                        }
-                    });
-                } catch (Exception e) {
-                    logger.warn("attach - immutable map: {}", name);
-                }
-            }
-            return null;
-        } else {
-            return null;
-        }
-    }
-
-    protected Object recurseAndDetachAndShallowClone(Object o) {
-        return recurseAndDetachAndShallowClone("", o, Collections.newSetFromMap(new IdentityHashMap()));
-    }
-
-    // callonce, callSingle and detachVariables()
-    private Object recurseAndDetachAndShallowClone(String name, Object o, Set<Object> seen) {
-        if (o instanceof List) {
-            o = new ArrayList((List) o);
-        } else if (o instanceof Map) {
-            o = new LinkedHashMap((Map) o);
-        }
-        Object result = recurseAndDetach(name, o, seen);
-        return result == null ? o : result;
-    }
-
-    private Object recurseAndDetach(String name, Object o, Set<Object> seen) {
-        if (o instanceof Value) {
-            Value value = (Value) o;
-            try {
-                if (value.canExecute()) {
-                    if (value.isMetaObject()) { // js function
-                        return new JsFunction(value);
-                    } else { // java function                        
-                        return new JsExecutable(value);
-                    }
-                } else if (value.isHostObject()) {
-                    return value.asHostObject();
-                }
-            } catch (Exception e) {
-                logger.warn("[*** detach ***] ignoring non-json value: '{}' - {}", name, e.getMessage());
-            }
-            return null;
-        } else if (o instanceof List) {
-            List list = (List) o;
-            int count = list.size();
-            try {
-                for (int i = 0; i < count; i++) {
-                    Object child = list.get(i);
-                    Object childResult = recurseAndDetach(name + "[" + i + "]", child, seen);
-                    if (childResult != null) {
-                        list.set(i, childResult);
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn("detach - immutable list: {}", name);
-            }
-            return null;
-        } else if (o instanceof Map) {
-            if (seen.add(o)) {
-                Map<String, Object> map = (Map) o;
-                try {
-                    map.forEach((k, v) -> {
-                        Object childResult = recurseAndDetach(name + "." + k, v, seen);
-                        if (childResult != null) {
-                            map.put(k, childResult);
-                        }
-                    });
-                } catch (Exception e) {
-                    logger.warn("detach - immutable map: {}", name);
-                }
-            }
-            return null;
-        } else {
-            return null;
-        }
-    }
-
-    public Value attachSource(CharSequence source) {
-        return JS.attachSource(source);
-    }
-
-    public Value attach(Value before) {
-        return JS.attach(before);
+    protected Map<String, Variable> shallowCloneVariables() {
+        Map<String, Variable> copy = new HashMap(vars.size());
+        vars.forEach((k, v) -> copy.put(k, v.copy(false))); // shallow clone
+        return copy;
     }
 
     protected <T> Map<String, T> getOrEvalAsMap(Variable var, Object... args) {
@@ -1223,9 +1249,9 @@ public class ScenarioEngine {
     public Variable executeFunction(Variable var, Object... args) {
         switch (var.type) {
             case JS_FUNCTION:
-                Value jsFunction = var.getValue();
-                JsValue jsResult = executeJsValue(jsFunction, args);
-                return new Variable(jsResult);
+                ProxyExecutable pe = var.getValue();
+                Object result = JsEngine.execute(pe, args);
+                return new Variable(result);
             case JAVA_FUNCTION:  // definitely a "call" with a single argument
                 Function javaFunction = var.getValue();
                 Object arg = args.length == 0 ? null : args[0];
@@ -1233,17 +1259,6 @@ public class ScenarioEngine {
                 return new Variable(JsValue.unWrap(javaResult));
             default:
                 throw new RuntimeException("expected function, but was: " + var);
-        }
-    }
-
-    private JsValue executeJsValue(Value function, Object... args) {
-        try {
-            return new JsValue(JsEngine.execute(function, args));
-        } catch (Exception e) {
-            String jsSource = function.getSourceLocation().getCharacters().toString();
-            KarateException ke = JsEngine.fromJsEvalException(jsSource, e, null);
-            setFailedReason(ke);
-            throw ke;
         }
     }
 
@@ -1264,6 +1279,14 @@ public class ScenarioEngine {
         JS.put(key, value);
     }
 
+    public Object getVariable(String key) {
+        return JS.get(key).getValue();
+    }
+
+    public boolean hasVariable(String key) {
+        return JS.bindings.hasMember(key);
+    }
+
     public void setVariable(String key, Object value) {
         Variable v;
         Object o;
@@ -1272,16 +1295,9 @@ public class ScenarioEngine {
             o = v.getValue();
         } else {
             o = value;
-            try {
-                v = new Variable(value);
-            } catch (Exception e) {
-                v = null;
-                logger.warn("[*** set variable ***] ignoring non-json value: {} - {}", key, e.getMessage());
-            }
+            v = new Variable(value);
         }
-        if (v != null) {
-            vars.put(key, v);
-        }
+        vars.put(key, v);
         if (JS != null) {
             JS.put(key, o);
         }
@@ -1312,8 +1328,8 @@ public class ScenarioEngine {
         }
     }
 
-    private Variable evalAndCastTo(AssignType assignType, String exp) {
-        Variable v = evalKarateExpression(exp);
+    private Variable evalAndCastTo(AssignType assignType, String exp, boolean docString) {
+        Variable v = docString ? new Variable(exp) : evalKarateExpression(exp);
         switch (assignType) {
             case BYTE_ARRAY:
                 return new Variable(v.getAsByteArray());
@@ -1332,26 +1348,26 @@ public class ScenarioEngine {
                 return new Variable(JsonUtils.fromCsv(v.getAsString()));
             case COPY:
                 return v.copy(true);
-            default: // AUTO (TEXT is pre-handled, see below)
+            default: // TEXT will be docstring, AUTO (def) will auto-parse JSON or XML
                 return v; // as is
         }
     }
 
-    public void assign(AssignType assignType, String name, String exp) {
+    public void assign(AssignType assignType, String name, String exp, boolean docString) {
         name = StringUtils.trimToEmpty(name);
         validateVariableName(name); // always validate when gherkin
         if (vars.containsKey(name)) {
             LOGGER.debug("over-writing existing variable '{}' with new value: {}", name, exp);
         }
-        if (assignType == AssignType.TEXT) {
-            setVariable(name, exp);
-        } else {
-            setVariable(name, evalAndCastTo(assignType, exp));
-        }
+        setVariable(name, evalAndCastTo(assignType, exp, docString));
     }
 
     private static boolean isEmbeddedExpression(String text) {
         return text != null && (text.startsWith("#(") || text.startsWith("##(")) && text.endsWith(")");
+    }
+
+    private Map<String, Object> Map(Object callResult) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     private static class EmbedAction {
@@ -1761,9 +1777,13 @@ public class ScenarioEngine {
         }
         path = StringUtils.trimToNull(path);
         if (path == null) {
-            StringUtils.Pair pair = parseVariableAndPath(name);
-            name = pair.left;
-            path = pair.right;
+            if (name.startsWith("(")) { // edge case, eval entire LHS
+                path = "$";
+            } else {
+                StringUtils.Pair pair = parseVariableAndPath(name);
+                name = pair.left;
+                path = pair.right;
+            }
         }
         if ("header".equals(name)) { // convenience shortcut for asserting against response header
             return matchHeader(matchType, path, rhs);
@@ -1810,7 +1830,7 @@ public class ScenarioEngine {
     }
 
     public Match.Result match(Match.Type matchType, Object actual, Object expected) {
-        return Match.execute(JS, matchType, actual, expected);
+        return Match.execute(JS, matchType, actual, expected, config.isMatchEachEmptyAllowed());
     }
 
     private static final Pattern VAR_AND_PATH_PATTERN = Pattern.compile("\\w+");
@@ -1905,10 +1925,8 @@ public class ScenarioEngine {
             case JAVA_FUNCTION:
                 return arg == null ? executeFunction(called) : executeFunction(called, new Object[]{arg.getValue()});
             case FEATURE:
-                // will be always a map or a list of maps (loop call result)                
+                // call result will be always a map or a list of maps (loop call result)
                 Object callResult = callFeature(called.getValue(), arg, -1, sharedScope);
-                Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap());
-                recurseAndAttach("", callResult, seen);
                 return new Variable(callResult);
             default:
                 throw new RuntimeException("not a callable feature or js function: " + called);
@@ -1925,6 +1943,8 @@ public class ScenarioEngine {
         } else {
             result = call(called, arg, sharedScope);
         }
+        // attach js functions from a different graal context
+        result = new Variable(JS.attachAll(result.getValue()));
         if (sharedScope && result.isMap()) {
             setVariables(result.getValue());
         }
@@ -1935,28 +1955,26 @@ public class ScenarioEngine {
         if (sharedScope) { // if shared scope
             vars.clear(); // clean slate            
             if (result.vars != null) {
-                Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap());
-                result.vars.forEach((k, v) -> {
-                    // clone maps and lists so that subsequent steps don't modify data / references being passed around
-                    Object o = recurseAndAttachAndShallowClone(v.getValue(), seen);
-                    try {
-                        vars.put(k, new Variable(o));
-                    } catch (Exception e) {
-                        logger.warn("[*** callonce result ***] ignoring non-json value: '{}' - {}", k, e.getMessage());
-                    }
-                });
+                // shallow clone maps and lists so that subsequent steps don't modify data / references being passed around
+                result.vars.forEach((k, v) -> vars.put(k, v.copy(false)));
+            } else if (result.value != null) {
+                if (result.value.isMap()) {
+                    Map<String, Object> map = result.value.getValue();
+                    // shallow clone newly added variables
+                    map.forEach((k, v) -> vars.put(k, new Variable(JsonUtils.shallowCopy(v))));
+                } else {
+                    logger.warn("callonce: ignoring non-map value from result.value: {}", result.value);
+                }
             }
-            init(); // this will attach and also insert magic variables
+            init(); // this will insert magic variables
             // re-apply config from time of snapshot
-            // and note that setConfig() will attach functions such as configured "headers"
             setConfig(new Config(result.config));
             return Variable.NULL; // since we already reset the vars above we return null
             // else the call() routine would try to do it again
             // note that shared scope means a return value is meaningless
         } else {
-            // deep-clone for the same reasons mentioned above
-            Object resultValue = recurseAndAttachAndShallowClone(result.value.getValue());
-            return new Variable(resultValue);
+            // shallow clone for the same reasons mentioned above
+            return result.value.copy(false);
         }
     }
 
@@ -1983,24 +2001,20 @@ public class ScenarioEngine {
             }
             // this thread is the 'winner'
             logger.info(">> lock acquired, begin callonce: {}", cacheKey);
-            Variable resultValue = call(called, arg, sharedScope);
+            Variable callResult = call(called, arg, sharedScope);
             // we clone result (and config) here, to snapshot state at the point the callonce was invoked
-            // detaching is important (see JsFunction) so that we can keep the source-code aside
-            // and use it to re-create functions in a new JS context - and work around graal-js limitations
-            Map<String, Variable> clonedVars = called.isFeature() && sharedScope ? detachVariables() : null;
-            Config clonedConfig = new Config(config);
-            clonedConfig.detach();
-            Object resultObject = recurseAndDetachAndShallowClone(resultValue.getValue());
-            result = new ScenarioCall.Result(new Variable(resultObject), clonedConfig, clonedVars);
+            Map<String, Variable> clonedVars = called.isFeature() && sharedScope ? shallowCloneVariables() : null;
+            result = new ScenarioCall.Result(callResult.copy(false), new Config(config), clonedVars);
             CACHE.put(cacheKey, result);
             logger.info("<< lock released, cached callonce: {}", cacheKey);
-            return resultValue; // another routine will apply globally if needed
+            // another routine will apply globally if needed
+            return callOnceResult(result, sharedScope);
         }
     }
 
-    public Object callFeature(Feature feature, Variable arg, int index, boolean sharedScope) {
+    public Object callFeature(FeatureCall featureCall, Variable arg, int index, boolean sharedScope) {
         if (arg == null || arg.isMap()) {
-            ScenarioCall call = new ScenarioCall(runtime, feature, arg);
+            ScenarioCall call = new ScenarioCall(runtime, featureCall, arg);
             call.setLoopIndex(index);
             call.setSharedScope(sharedScope);
             FeatureRuntime fr = new FeatureRuntime(call);
@@ -2035,7 +2049,7 @@ public class ScenarioEngine {
                     break;
                 }
                 try {
-                    Object loopResult = callFeature(feature, loopArg, loopIndex, sharedScope);
+                    Object loopResult = callFeature(featureCall, loopArg, loopIndex, sharedScope);
                     result.add(loopResult);
                 } catch (Exception e) {
                     String message = "feature call loop failed at index: " + loopIndex + ", " + e.getMessage();
@@ -2191,7 +2205,7 @@ public class ScenarioEngine {
             Json json = Json.of(text);
             return evalEmbeddedExpressions(new Variable(json.value()), forMatch);
         } else if (isXml(text)) {
-            Document doc = XmlUtils.toXmlDoc(text);
+            Document doc = XmlUtils.toXmlDoc(text, config.isXmlNamespaceAware());
             return evalEmbeddedExpressions(new Variable(doc), forMatch);
         } else if (isXmlPath(text)) {
             return evalXmlPathOnVariableByName(RESPONSE, text);

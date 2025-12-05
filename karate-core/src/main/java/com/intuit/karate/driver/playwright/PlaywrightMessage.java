@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -93,19 +93,15 @@ public class PlaywrightMessage {
         return this;
     }
 
-    public String getParam(String path) {
-        return getParam(path, String.class);
-    }
-
-    public <T> T getParam(String path, Class<T> clazz) {
+    public <T> T getParam(String path) {
         if (params == null) {
             return null;
         }
-        return params.get(path, clazz);
+        return params.get(path);
     }
 
     public <T> boolean paramHas(String path, T expected) {
-        Object actual = getParam(path, Object.class);
+        Object actual = getParam(path);
         if (actual == null) {
             return expected == null;
         }
@@ -116,22 +112,18 @@ public class PlaywrightMessage {
         return result;
     }
 
-    public String getResult(String path) {
-        return getResult(path, String.class);
-    }
-
-    public <T> T getResult(String path, Class<T> clazz) {
+    public <T> T getResult(String path) {
         if (result == null) {
             return null;
         }
-        return result.get(path, clazz);
+        return result.get(path);
     }
 
     public <T> T getResultValue() {
         if (result == null) {
             return null;
         }
-        Map<String, Object> map = result.get("value", Map.class);
+        Map<String, Object> map = result.get("value");
         return (T) recurse(map);
     }
 

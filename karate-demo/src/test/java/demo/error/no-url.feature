@@ -9,6 +9,6 @@ Feature:  No URL found proper error response
     When method get
     Then status 404
     And match header content-type contains 'application/json'
-    And match response.status_code == 404
-    And match response.method == 'GET'
-    And match response.error_message == 'The URL you have reached is not in service at this time'
+    And match response.status == 404
+    And match response.path == '/hello'
+    And match response.error == 'Not Found'

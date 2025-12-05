@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -42,6 +42,7 @@ public class WebSocketOptions {
     private Function<byte[], Boolean> binaryHandler;
     private Map<String, Object> headers;
     private int maxPayloadSize = 4194304;
+    private boolean useFrameAggregation = false;
 
     public WebSocketOptions(String url) {
         this(url, null);
@@ -57,6 +58,12 @@ public class WebSocketOptions {
             if (temp != null) {
                 maxPayloadSize = temp;
             }
+
+            Boolean tempUseFrameAggregation = (Boolean) options.get("useFrameAggregation");
+            if (tempUseFrameAggregation != null) {
+                useFrameAggregation = tempUseFrameAggregation;
+            }
+
             headers = (Map) options.get("headers");
         }
     }
@@ -120,4 +127,7 @@ public class WebSocketOptions {
         this.maxPayloadSize = maxPayloadSize;
     }
 
+    public boolean getUseFrameAggregation() { return this.useFrameAggregation; }
+
+    public void setUseFrameAggregation(boolean useFrameAggregation) { this.useFrameAggregation = useFrameAggregation; }
 }

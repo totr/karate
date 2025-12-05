@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,9 @@
 package com.intuit.karate.core;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  *
@@ -35,6 +37,7 @@ public class ExamplesTable {
     private final ScenarioOutline outline;
     private final Table table;
     private List<Tag> tags;
+    
 
     public ExamplesTable(ScenarioOutline outline, Table table) {
         this.outline = outline;
@@ -56,6 +59,15 @@ public class ExamplesTable {
 
     public Table getTable() {
         return table;
+    }
+
+    public Map<String, Object> toKarateJson() {
+        Map<String, Object> map = new HashMap();
+        List<String> tagStrings = new ArrayList();
+        tags.forEach(tag -> tagStrings.add(tag.toString()));
+        map.put("tags", tagStrings);
+        map.put("data", table.getRowsAsMapsConverted());
+        return map;
     }
 
 }

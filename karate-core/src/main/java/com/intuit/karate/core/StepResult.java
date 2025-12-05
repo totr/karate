@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -222,6 +222,10 @@ public class StepResult {
     public boolean isStopped() {
         return result.isFailed() || result.isAborted();
     }
+    
+    public boolean isFailed() {
+        return result.isFailed();
+    }
 
     public StepResult(Step step, Result result) {
         this.step = step;
@@ -276,7 +280,7 @@ public class StepResult {
 
     public void setFailedReason(Throwable failedReason) {
         this.failedReason = failedReason;
-    }
+    }        
 
     @Override
     public String toString() {

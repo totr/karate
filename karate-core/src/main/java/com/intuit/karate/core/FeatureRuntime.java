@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ package com.intuit.karate.core;
 import com.intuit.karate.RuntimeHook;
 import com.intuit.karate.PerfHook;
 import com.intuit.karate.Suite;
+import com.intuit.karate.http.HttpClientFactory;
 import com.intuit.karate.resource.MemoryResource;
 import com.intuit.karate.resource.Resource;
 import java.io.File;
@@ -47,55 +48,72 @@ public class FeatureRuntime implements Runnable {
     public final Suite suite;
     public final FeatureRuntime rootFeature;
     public final ScenarioCall caller;
-    public final Feature feature;
+    public final FeatureCall featureCall;
     public final Iterator<ScenarioRuntime> scenarios;
     public final PerfHook perfHook;
     public final FeatureResult result;
 
+    protected ScenarioResult setupResult;
+
+    private ScenarioEngine mockEngine;
+
     private final ParallelProcessor<ScenarioRuntime> processor;
 
     public final Map<String, ScenarioCall.Result> CALLONCE_CACHE = new HashMap();
+    public final Map<String, Map<String, Object>> SETUPONCE_CACHE = new HashMap();
 
     private Runnable next;
 
     public Resource resolveFromThis(String path) {
-        return feature.getResource().resolve(path);
+        return featureCall.feature.getResource().resolve(path);
     }
 
     public Resource resolveFromRoot(String path) {
-        return rootFeature.feature.getResource().resolve(path);
+        return rootFeature.featureCall.feature.getResource().resolve(path);
     }
 
     public void setNext(Runnable next) {
         this.next = next;
     }
 
-    public static FeatureRuntime forTempUse() {
-        Suite sr = Suite.forTempUse();
+    public void setMockEngine(ScenarioEngine mockEngine) {
+        this.mockEngine = mockEngine;
+    }
+
+    public ScenarioEngine getMockEngine() {
+        return mockEngine;
+    }
+
+    public static FeatureRuntime forTempUse(HttpClientFactory hcf) {
+        Suite sr = Suite.forTempUse(hcf);
         File workingDir = new File(sr.buildDir).getAbsoluteFile();
         Resource resource = new MemoryResource(workingDir, "Feature:\nScenario:\n");
         Feature feature = Feature.read(resource);
-        return FeatureRuntime.of(sr, feature);
+        return FeatureRuntime.of(sr, new FeatureCall(feature));
     }
 
     public static FeatureRuntime of(Feature feature) {
-        return FeatureRuntime.of(new Suite(), feature, null);
+        return of(new FeatureCall(feature));
     }
 
-    public static FeatureRuntime of(Suite sr, Feature feature) {
-        return FeatureRuntime.of(sr, feature, null);
+    public static FeatureRuntime of(FeatureCall feature) {
+        return of(new Suite(), feature, null);
     }
 
-    public static FeatureRuntime of(Suite sr, Feature feature, Map<String, Object> arg) {
+    public static FeatureRuntime of(Suite sr, FeatureCall feature) {
+        return of(sr, feature, null);
+    }
+
+    public static FeatureRuntime of(Suite sr, FeatureCall feature, Map<String, Object> arg) {
         return new FeatureRuntime(sr, feature, ScenarioCall.none(arg), null);
     }
 
-    public static FeatureRuntime of(Suite sr, Feature feature, Map<String, Object> arg, PerfHook perfHook) {
+    public static FeatureRuntime of(Suite sr, FeatureCall feature, Map<String, Object> arg, PerfHook perfHook) {
         return new FeatureRuntime(sr, feature, ScenarioCall.none(arg), perfHook);
     }
 
     public FeatureRuntime(ScenarioCall call) {
-        this(call.parentRuntime.featureRuntime.suite, call.feature, call, call.parentRuntime.featureRuntime.perfHook);
+        this(call.parentRuntime.featureRuntime.suite, call.featureCall, call, call.parentRuntime.featureRuntime.perfHook);
         result.setLoopIndex(call.getLoopIndex());
         result.setCallDepth(call.depth);
         if (call.arg != null && !call.arg.isNull()) {
@@ -103,12 +121,12 @@ public class FeatureRuntime implements Runnable {
         }
     }
 
-    private FeatureRuntime(Suite suite, Feature feature, ScenarioCall caller, PerfHook perfHook) {
+    private FeatureRuntime(Suite suite, FeatureCall featureCall, ScenarioCall caller, PerfHook perfHook) {
         this.suite = suite;
-        this.feature = feature;
+        this.featureCall = featureCall;
         this.caller = caller;
         this.rootFeature = caller.isNone() ? this : caller.parentRuntime.featureRuntime;
-        result = new FeatureResult(feature);
+        result = new FeatureResult(featureCall.feature);
         scenarios = new ScenarioIterator(this).filterSelected().iterator();
         this.perfHook = perfHook;
         if (caller.isNone() && suite.parallel && perfHook == null) {
@@ -172,29 +190,45 @@ public class FeatureRuntime implements Runnable {
     private void processScenario(ScenarioRuntime sr) {
         if (beforeHook()) {
             lastExecutedScenario = sr;
-            if (suite.jobManager != null) {
-                CompletableFuture future = suite.jobManager.addChunk(sr);
-                logger.info("waiting for job executor to process: {}", sr);
-                future.join();
-                logger.info("job executor completed processing: {}", sr);
-            } else {
-                sr.run();
-            }
+            sr.run();
             // can be empty for distributed / job-server flows
             if (!sr.result.getStepResults().isEmpty()) {
                 synchronized (result) {
                     result.addResult(sr.result);
+                    
+                    // Execute afterScenarioOutline if applicable
+                    // NOTE: Needs to be run after adding result, since result count is used to deterime
+                    // if the scenario is the last in the outline
+                    if (!sr.dryRun && isLastScenarioInOutline(sr.scenario)) {
+                        sr.engine.invokeAfterHookIfConfigured(AfterHookType.AFTER_OUTLINE);
+                        suite.hooks.forEach(h -> h.afterScenarioOutline(sr));
+                    }
                 }
             }
         }
     }
 
+    private boolean isLastScenarioInOutline(Scenario scenario) {
+        // Check if scenario is part of an outline
+        if (!scenario.isOutlineExample()) return false;
+
+        // Count the number of completed scenarios with the same section ID (in same outline)
+        int completedScenarios = 0;
+        for (ScenarioResult result : result.getScenarioResults()) {
+            if (result.getScenario().getSection().getIndex() == scenario.getSection().getIndex()) {
+                completedScenarios++;
+            }
+        }
+        return completedScenarios == scenario.getSection().getScenarioOutline().getNumScenarios();
+    }
+
     // extracted for junit5
-    public void afterFeature() {
+    public synchronized void afterFeature() {
         result.sortScenarioResults();
         if (lastExecutedScenario != null) {
-            lastExecutedScenario.engine.invokeAfterHookIfConfigured(true);
+            lastExecutedScenario.engine.invokeAfterHookIfConfigured(AfterHookType.AFTER_FEATURE);
             result.setVariables(lastExecutedScenario.engine.getAllVariablesAsMap());
+            result.setConfig(lastExecutedScenario.engine.getConfig());
         }
         if (!result.isEmpty()) {
             for (RuntimeHook hook : suite.hooks) {
@@ -208,7 +242,7 @@ public class FeatureRuntime implements Runnable {
 
     @Override
     public String toString() {
-        return feature.toString();
+        return featureCall.feature.toString();
     }
 
 }

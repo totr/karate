@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,8 @@
 package com.intuit.karate.http;
 
 import com.intuit.karate.Json;
+import com.intuit.karate.JsonUtils;
+import com.intuit.karate.RuntimeHook;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.graal.JsArray;
 import com.intuit.karate.graal.JsValue;
@@ -40,15 +42,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.apache.http.client.utils.URIBuilder;
 import org.graalvm.polyglot.Value;
@@ -82,10 +83,11 @@ public class HttpRequestBuilder implements ProxyObject {
     private static final String CONNECT = "connect";
     private static final String OPTIONS = "options";
     private static final String TRACE = "trace";
+    private static final String MULTI_PART = "multiPart";
 
     private static final String[] KEYS = new String[]{
         URL, METHOD, PATH, PARAM, PARAMS, HEADER, HEADERS, BODY, INVOKE,
-        GET, POST, PUT, DELETE, PATCH, HEAD, CONNECT, OPTIONS, TRACE
+        GET, POST, PUT, DELETE, PATCH, HEAD, CONNECT, OPTIONS, TRACE, MULTI_PART
     };
     private static final Set<String> KEY_SET = new HashSet<>(Arrays.asList(KEYS));
     private static final JsArray KEY_ARRAY = new JsArray(KEYS);
@@ -99,7 +101,7 @@ public class HttpRequestBuilder implements ProxyObject {
     private Object body;
     private Set<Cookie> cookies;
     private String retryUntil;
-
+    private RuntimeHook hook;
     public final HttpClient client;
 
     public HttpRequestBuilder(HttpClient client) {
@@ -119,8 +121,8 @@ public class HttpRequestBuilder implements ProxyObject {
         return this;
     }
 
-    public HttpRequestBuilder copy() {
-        HttpRequestBuilder hrb = new HttpRequestBuilder(client);
+    public HttpRequestBuilder copy(HttpClient newClient) {
+        HttpRequestBuilder hrb = new HttpRequestBuilder(newClient == null ? client : newClient);
         hrb.url = url;
         hrb.method = method;
         hrb.paths = paths;
@@ -145,7 +147,27 @@ public class HttpRequestBuilder implements ProxyObject {
     }
 
     public HttpRequest build() {
+        buildInternal();
         HttpRequest request = new HttpRequest();
+        request.setMethod(method);
+        request.setUrl(getUri());
+        if (multiPart != null) {
+            request.setBodyForDisplay(multiPart.getBodyForDisplay());
+        }
+        if (body != null) {
+            request.setBody(JsonUtils.toBytes(body));
+        }
+        request.setHeaders(headers);
+        return request;
+    }
+
+    private void buildInternal() {
+        if (url == null) {
+            url = client.getConfig().getUrl();
+            if (url == null) {
+                throw new RuntimeException("incomplete http request, 'url' not set");
+            }
+        }
         if (method == null) {
             if (multiPart != null && multiPart.isMultipart()) {
                 method = "POST";
@@ -154,7 +176,6 @@ public class HttpRequestBuilder implements ProxyObject {
             }
         }
         method = method.toUpperCase();
-        request.setMethod(method);
         if ("GET".equals(method) && multiPart != null) {
             Map<String, Object> parts = multiPart.getFormFields();
             if (parts != null) {
@@ -162,7 +183,6 @@ public class HttpRequestBuilder implements ProxyObject {
             }
             multiPart = null;
         }
-        request.setUrl(getUri());
         if (multiPart != null) {
             if (body == null) { // this is not-null only for a re-try, don't rebuild multi-part
                 body = multiPart.build();
@@ -176,7 +196,6 @@ public class HttpRequestBuilder implements ProxyObject {
                     contentType(multiPart.getContentTypeHeader());
                 }
             }
-            request.setBodyForDisplay(multiPart.getBodyForDisplay());
         }
         if (cookies != null && !cookies.isEmpty()) {
             List<String> cookieValues = new ArrayList<>(cookies.size());
@@ -187,7 +206,6 @@ public class HttpRequestBuilder implements ProxyObject {
             header(HttpConstants.HDR_COOKIE, StringUtils.join(cookieValues, "; "));
         }
         if (body != null) {
-            request.setBody(JsValue.toBytes(body));
             if (multiPart == null) {
                 String contentType = getContentType();
                 if (contentType == null) {
@@ -198,8 +216,8 @@ public class HttpRequestBuilder implements ProxyObject {
                 }
                 Charset charset = contentType == null ? null : HttpUtils.parseContentTypeCharset(contentType);
                 if (charset == null) {
-                    // client can be null when not in karate scenario
-                    charset = client == null ? null : client.getConfig().getCharset();
+                    // client can be null when not in karate scenario, and mock clients can have nulls
+                    charset = client == null ? null : client.getConfig() == null ? null : client.getConfig().getCharset();
                     if (charset != null) {
                         // edge case, support setting content type to an empty string
                         contentType = StringUtils.trimToNull(contentType);
@@ -211,8 +229,6 @@ public class HttpRequestBuilder implements ProxyObject {
                 contentType(contentType);
             }
         }
-        request.setHeaders(headers);
-        return request;
     }
 
     public Response invoke() {
@@ -259,6 +275,30 @@ public class HttpRequestBuilder implements ProxyObject {
         return this;
     }
 
+    public List<String> getPaths() {
+        return paths;
+    }
+
+    public Object getBody() {
+        return body;
+    }
+
+    public Map<String, String> getHeaders() {
+        if (headers == null) {
+            return new LinkedHashMap(0);
+        }
+        Map<String, String> map = new LinkedHashMap(headers.size());
+        headers.forEach((k, v) -> {
+            if (v != null && !v.isEmpty()) {
+                Object value = v.get(0);
+                if (value != null) {
+                    map.put(k, value.toString());
+                }
+            }
+        });
+        return map;
+    }
+
     public String getUri() {
         try {
             URIBuilder builder;
@@ -276,10 +316,16 @@ public class HttpRequestBuilder implements ProxyObject {
                     if (!item.isEmpty()) {
                         segments.add(item);
                     }
-                }                
-                for (String item : paths) {
-                    for (String s : StringUtils.split(item, '/', true)) {
-                        segments.add(s);
+                }
+                Iterator<String> pathIterator = paths.iterator();
+                while (pathIterator.hasNext()) {
+                    String item = pathIterator.next();
+                    if (!pathIterator.hasNext() && "/".equals(item)) { // preserve trailing slash
+                        segments.add("");
+                    } else {
+                        for (String s : StringUtils.split(item, '/', true)) {
+                            segments.add(s);
+                        }
                     }
                 }
                 builder.setPathSegments(segments);
@@ -390,7 +436,7 @@ public class HttpRequestBuilder implements ProxyObject {
 
     public HttpRequestBuilder param(String name, List<String> values) {
         if (params == null) {
-            params = new HashMap<>();
+            params = new LinkedHashMap<>();
         }
         List<String> notNullValues = values.stream().filter(v -> v != null).collect(Collectors.toList());
         if (!notNullValues.isEmpty()) {
@@ -445,6 +491,15 @@ public class HttpRequestBuilder implements ProxyObject {
         }
         multiPart.part(map);
         return this;
+    }
+
+    public HttpRequestBuilder hook(RuntimeHook hook) {
+        this.hook = hook;
+        return this;
+    }
+
+    public RuntimeHook hook() {
+        return hook;
     }
 
     //==========================================================================
@@ -555,6 +610,8 @@ public class HttpRequestBuilder implements ProxyObject {
                 return DELETE_FUNCTION;
             case URL:
                 return (Function<String, Object>) this::url;
+            case MULTI_PART:
+                return (Function<Map<String, Object>, Object>) this::multiPart;
             default:
                 logger.warn("no such property on http object: {}", key);
                 return null;
@@ -597,6 +654,69 @@ public class HttpRequestBuilder implements ProxyObject {
     @Override
     public String toString() {
         return getUri();
+    }
+
+    public String toCurlCommand() {
+        buildInternal();
+        StringBuilder sb = new StringBuilder();
+        sb.append("curl ");
+        sb.append("-X ").append(method).append(' ');
+        String url = getUri();
+        if (!StringUtils.isBlank(url)) {
+            sb.append(getUri()).append(' ');
+        }
+        if (multiPart != null) {
+            sb.append("\\\n");
+            sb.append(multiPart.toCurlCommand());
+        } else if (body != null) {
+            sb.append("\\\n");
+            String raw = JsonUtils.toString(body);
+            sb.append("-d '").append(raw).append("'");
+        }
+        return sb.toString();
+    }
+
+    public Map<String, Object> toMap() {
+        buildInternal();
+        Map<String, Object> map = new HashMap();
+        map.put("url", getUri());
+        map.put("method", method);
+        if (headers != null) {
+            List<Map> list = new ArrayList(headers.size());
+            map.put("headers", list);
+            headers.forEach((k, v) -> {
+                if (v != null) {
+                    v.forEach(value -> {
+                        if (value != null) {
+                            Map<String, Object> header = new HashMap();
+                            header.put("name", k);
+                            header.put("value", value);
+                            list.add(header);
+                        }
+                    });
+                }
+            });
+        }
+        if (params != null) {
+            List<Map> list = new ArrayList(params.size());
+            map.put("params", list);
+            params.forEach((k, v) -> {
+                if (v != null) {
+                    v.forEach(value -> {
+                        if (value != null) {
+                            Map<String, Object> header = new HashMap();
+                            header.put("name", k);
+                            header.put("value", value);
+                            list.add(header);
+                        }
+                    });
+                }
+            });
+        }
+        if (body != null) {
+            map.put("body", body);
+        }
+        return map;
     }
 
 }

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,10 +32,10 @@ import java.net.URI;
  * @author pthomas3
  */
 public interface Resource {
-    
+
     public static final String CLASSPATH_COLON = "classpath:";
     public static final String FILE_COLON = "file:";
-    public static final String ROOT_COLON = "root:";
+    public static final String THIS_COLON = "this:"; // used only in html templating
 
     boolean isFile();
 
@@ -79,5 +79,16 @@ public interface Resource {
     }
 
     InputStream getStream();
+
+    default long getLastModified() {
+        if (isFile()) {
+            return getFile().lastModified();
+        }
+        try {
+            return getUri().toURL().openConnection().getLastModified();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
 
 }

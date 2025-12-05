@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,10 +24,10 @@
 package com.intuit.karate.http;
 
 import com.intuit.karate.FileUtils;
+import com.intuit.karate.JsonUtils;
 import com.intuit.karate.Logger;
 import com.intuit.karate.core.Config;
 import com.intuit.karate.core.Variable;
-import com.intuit.karate.graal.JsValue;
 import java.util.List;
 import java.util.Map;
 
@@ -64,13 +64,13 @@ public class HttpLogger {
     }
 
     private static void logBody(Config config, HttpLogModifier logModifier,
-            StringBuilder sb, String uri, byte[] body, boolean request) {
+            StringBuilder sb, String uri, byte[] body, boolean request, ResourceType rt) {
         if (body == null) {
             return;
         }
         String text;
         if (config != null && needsPrettyLogging(config, request)) {
-            Object converted = JsValue.fromBytes(body, false, null);
+            Object converted = JsonUtils.fromBytes(body, false, rt);
             Variable v = new Variable(converted);
             text = v.getAsPrettyString();
         } else {
@@ -107,7 +107,7 @@ public class HttpLogger {
         if (rawResponse != null && logModifier != null) {
             rawResponse = logModifier.response(url, rawResponse);
         }
-        long responseTime = request.getEndTimeMillis() - request.getStartTimeMillis();
+        long responseTime = request.getEndTime() - request.getStartTime();
         return "status code was: " + response.getStatus() + ", expected: " + expected
                 + ", response time in milliseconds: " + responseTime + ", url: " + maskedUrl
                 + ", response: \n" + rawResponse;
@@ -126,16 +126,22 @@ public class HttpLogger {
         if (rt == null || rt.isBinary()) {
             // don't log body
         } else {
-            byte[] body = rt == ResourceType.MULTIPART ? request.getBodyForDisplay().getBytes() : request.getBody();
-            logBody(config, requestModifier, sb, uri, body, true);
+            byte[] body;
+            if (rt == ResourceType.MULTIPART) {
+                body = request.getBodyForDisplay() == null ? null : request.getBodyForDisplay().getBytes();
+            } else {
+                body = request.getBody();
+            }
+            logBody(config, requestModifier, sb, uri, body, true, rt);
         }
         sb.append('\n');
         logger.debug("{}", sb);
     }
 
     public void logResponse(Config config, HttpRequest request, Response response) {
-        long startTime = request.getStartTimeMillis();
-        long elapsedTime = request.getEndTimeMillis() - startTime;
+        long startTime = request.getStartTime();
+        long elapsedTime = request.getEndTime() - startTime;
+        response.setResponseTime(elapsedTime);
         StringBuilder sb = new StringBuilder();
         String uri = request.getUrl();
         HttpLogModifier responseModifier = logModifier(config, uri);
@@ -146,8 +152,9 @@ public class HttpLogger {
         if (rt == null || rt.isBinary()) {
             // don't log body
         } else {
-            logBody(config, responseModifier, sb, uri, response.getBody(), false);
+            logBody(config, responseModifier, sb, uri, response.getBody(), false, rt);
         }
+        sb.append('\n');
         logger.debug("{}", sb);
     }
 

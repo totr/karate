@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,15 +24,13 @@
 package com.intuit.karate;
 
 import com.intuit.karate.core.AssignType;
-import com.intuit.karate.core.Action;
 import com.intuit.karate.core.ScenarioEngine;
-import cucumber.api.DataTable;
-import cucumber.api.java.en.When;
+import com.intuit.karate.core.When;
+
 import java.util.List;
 import java.util.Map;
 
 /**
- *
  * @author pthomas3
  */
 public class ScenarioActions implements Actions {
@@ -60,12 +58,12 @@ public class ScenarioActions implements Actions {
 
     @Override
     @When("^configure ([^\\s]+) =$")
-    public void configureDocstring(String key, String exp) {
+    public void configureDocString(String key, String exp) {
         engine.configure(key, exp);
     }
 
     @Override
-    @When("^configure ([^\\s]+) = (.+)")
+    @When("^configure\\h+([^\\s]+)\\h+= (.+)")
     public void configure(String key, String exp) {
         engine.configure(key, exp);
     }
@@ -83,7 +81,7 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^param ([^\\s]+) = (.+)")
+    @When("^param\\h+([^\\s]+)\\h+= (.+)")
     public void param(String name, String exp) {
         engine.param(name, exp);
     }
@@ -95,7 +93,7 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^cookie ([^\\s]+) = (.+)")
+    @When("^cookie\\h+([^\\s]+)\\h+= (.+)")
     public void cookie(String name, String value) {
         engine.cookie(name, value);
     }
@@ -109,11 +107,17 @@ public class ScenarioActions implements Actions {
     @Override
     @When("^csv (.+) = (.+)")
     public void csv(String name, String exp) {
-        engine.assign(AssignType.CSV, name, exp);
+        engine.assign(AssignType.CSV, name, exp, false);
     }
 
     @Override
-    @When("^header ([^\\s]+) = (.+)")
+    @When("^csv (.+) =$")
+    public void csvDocString(String name, String exp) {
+        engine.assign(AssignType.CSV, name, exp, true);
+    }
+
+    @Override
+    @When("^header\\h+([^\\s]+)\\h+= (.+)")
     public void header(String name, String exp) {
         engine.header(name, exp);
     }
@@ -125,7 +129,7 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^form field ([^\\s]+) = (.+)")
+    @When("^form field\\h+([^\\s]+)\\h+= (.+)")
     public void formField(String name, String exp) {
         engine.formField(name, exp);
     }
@@ -138,7 +142,7 @@ public class ScenarioActions implements Actions {
 
     @Override
     @When("^request$")
-    public void requestDocstring(String body) {
+    public void requestDocString(String body) {
         engine.request(body);
     }
 
@@ -148,92 +152,88 @@ public class ScenarioActions implements Actions {
         engine.request(body);
     }
 
-    @When("^table (.+)")
-    public void table(String name, DataTable table) {
-        table(name, table.asMaps(String.class, String.class));
-    }
-
     @Override
-    @Action("^table (.+)")
+    @When("^table (.+)")
     public void table(String name, List<Map<String, String>> table) {
         engine.table(name, table);
     }
 
-    @When("^replace (\\w+)$")
-    public void replace(String name, DataTable table) {
-        replace(name, table.asMaps(String.class, String.class));
-    }
-
     @Override
-    @Action("^replace (\\w+)$")
+    @When("^replace (\\w+)$")
     public void replace(String name, List<Map<String, String>> table) {
         engine.replaceTable(name, table);
     }
 
     @Override
-    @When("^replace (\\w+).([^\\s]+) = (.+)")
+    @When("^replace\\h+(\\w+).([^\\s]+)\\h+= (.+)")
     public void replace(String name, String token, String value) {
         engine.replace(name, token, value);
     }
 
     @Override
-    @When("^def (.+) =$")
-    public void defDocstring(String name, String exp) {
-        engine.assign(AssignType.AUTO, name, exp);
+    @When("^def\\h+(\\w+)\\h+=\\h+(.+)")
+    public void def(String name, String exp) {
+        engine.assign(AssignType.AUTO, name, exp, false);
     }
 
     @Override
-    @When("^def (\\w+) = (.+)")
-    public void def(String name, String exp) {
-        engine.assign(AssignType.AUTO, name, exp);
+    @When("^def (.+) =$")
+    public void defDocString(String name, String exp) {
+        engine.assign(AssignType.AUTO, name, exp, false); // auto-parse json and xml
     }
 
     @Override
     @When("^text (.+) =$")
     public void text(String name, String exp) {
-        engine.assign(AssignType.TEXT, name, exp);
+        engine.assign(AssignType.TEXT, name, exp, true); // doc string
     }
 
     @Override
     @When("^yaml (.+) = (.+)")
     public void yaml(String name, String exp) {
-        engine.assign(AssignType.YAML, name, exp);
+        engine.assign(AssignType.YAML, name, exp, false);
+    }
+
+    @Override
+    @When("^yaml (.+) =$")
+    public void yamlDocString(String name, String exp) {
+        engine.assign(AssignType.YAML, name, exp, true);
     }
 
     @Override
     @When("^copy (.+) = (.+)")
     public void copy(String name, String exp) {
-        engine.assign(AssignType.COPY, name, exp);
+        engine.assign(AssignType.COPY, name, exp, false);
     }
 
     @Override
     @When("^json (.+) = (.+)")
     public void json(String name, String exp) {
-        engine.assign(AssignType.JSON, name, exp);
+        engine.assign(AssignType.JSON, name, exp, false);
     }
 
     @Override
     @When("^string (.+) = (.+)")
     public void string(String name, String exp) {
-        engine.assign(AssignType.STRING, name, exp);
+        engine.assign(AssignType.STRING, name, exp, false);
     }
 
     @Override
     @When("^xml (.+) = (.+)")
     public void xml(String name, String exp) {
-        engine.assign(AssignType.XML, name, exp);
+        engine.assign(AssignType.XML, name, exp, false);
     }
 
     @Override
     @When("^xmlstring (.+) = (.+)")
     public void xmlstring(String name, String exp) {
-        engine.assign(AssignType.XML_STRING, name, exp);
+        engine.assign(AssignType.XML_STRING, name, exp, false);
     }
 
     @Override
     @When("^bytes (.+) = (.+)")
     public void bytes(String name, String exp) {
-        engine.assign(AssignType.BYTE_ARRAY, name, exp);
+        engine.assign(AssignType.BYTE_ARRAY, name, exp, false);
     }
 
     @Override
@@ -243,7 +243,7 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^method (\\w+)")
+    @When("^method\\h+(\\w+)")
     public void method(String method) {
         engine.method(method);
     }
@@ -297,7 +297,7 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^status (\\d+)")
+    @When("^status\\h+(\\d+)")
     public void status(int status) {
         engine.status(status);
     }
@@ -318,30 +318,25 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
-    @When("^set ([^\\s]+)( .+)? =$")
-    public void setDocstring(String name, String path, String value) {
+    @When("^set\\h+([^\\s]+)( .+)? =$")
+    public void setDocString(String name, String path, String value) {
         engine.set(name, path, value);
     }
 
     @Override
-    @When("^set ([^\\s]+)( .+)? = (.+)")
+    @When("^set\\h+([^\\s]+)( .+)?\\h+= (.+)")
     public void set(String name, String path, String value) {
         engine.set(name, path, value);
     }
 
-    @When("^set ([^\\s]+)( [^=]+)?$")
-    public void set(String name, String path, DataTable table) {
-        set(name, path, table.asMaps(String.class, String.class));
-    }
-
     @Override
-    @Action("^set ([^\\s]+)( [^=]+)?$")
+    @When("^set ([^\\s]+)( [^=]+)?$")
     public void set(String name, String path, List<Map<String, String>> table) {
         engine.setViaTable(name, path, table);
     }
 
     @Override
-    @When("^remove ([^\\s]+)( .+)?")
+    @When("^remove\\h+([^\\s]+)( .+)?")
     public void remove(String name, String path) {
         engine.remove(name, path);
     }
@@ -366,8 +361,14 @@ public class ScenarioActions implements Actions {
 
     @Override
     @When("^eval$")
-    public void evalDocstring(String exp) {
+    public void evalDocString(String exp) {
         engine.evalJs(exp);
+    }
+
+    @Override
+    @When("^([\\w]+\\.[^=]+=$)")
+    public void evalAssignDocString(String lhs, String rhs) {
+        engine.evalJs(lhs + rhs);
     }
 
     @Override
@@ -383,16 +384,28 @@ public class ScenarioActions implements Actions {
     }
 
     @Override
+    @When("^delete (.+)")
+    public void evalDelete(String exp) {
+        engine.evalJs("delete " + exp);
+    }
+
+    @Override
     @When("^listen (.+)")
     public void listen(String body) {
         engine.listen(body);
     }
-    
+
     @Override
     @When("^doc (.+)")
     public void doc(String exp) {
         engine.doc(exp);
-    }  
+    }
+
+    @Override
+    @When("^compareImage (.+)")
+    public void compareImage(String exp) {
+        engine.compareImage(exp);
+    }
 
     //==========================================================================
     //

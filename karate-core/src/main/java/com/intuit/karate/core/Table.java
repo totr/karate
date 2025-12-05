@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -170,6 +170,20 @@ public class Table {
             List<String> row = rows.get(i);
             for (Column col : cols) {
                 map.put(col.key, row.get(col.index));
+            }
+        }
+        return list;
+    }
+
+    public List<Map<String, Object>> getRowsAsMapsConverted() {
+        int rowCount = rows.size();
+        List<Map<String, Object>> list = new ArrayList(rowCount - 1);
+        for (int i = 1; i < rowCount; i++) { // don't include header row    
+            Map<String, Object> map = new LinkedHashMap(cols.size());
+            list.add(map);
+            List<String> row = rows.get(i);
+            for (Column col : cols) {
+                map.put(col.key, convert(row.get(col.index), col));
             }
         }
         return list;

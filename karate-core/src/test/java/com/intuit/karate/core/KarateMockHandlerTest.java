@@ -99,6 +99,34 @@ class KarateMockHandlerTest {
         );
         matchVar("response", "{ foo: ['bar'] }");
     }
+    
+    @Test
+    void testRequestUri() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestUri");
+        run(
+                URL_STEP,
+                "param foo = 'bar'",
+                "path 'hello'",
+                "method get"
+        );
+        matchVar("response", "/hello?foo=bar");
+    }    
+    
+    @Test
+    void testRequestPath() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestPath");
+        run(
+                URL_STEP,
+                "param foo = 'bar'",
+                "path 'hello'",
+                "method get"
+        );
+        matchVar("response", "/hello");
+    }     
 
     @Test
     void testParams() {
@@ -141,6 +169,22 @@ class KarateMockHandlerTest {
         );
         matchVar("response", "{ foo: ['bar', 'baz'] }");
     }
+    
+    @Test
+    void testParamMultiValueVariables() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestParams");
+        run(
+                URL_STEP,
+                "def first = 'bar'",
+                "def second = 'baz'",
+                "param foo = ['#(first)', '#(second)']",
+                "path 'hello'",
+                "method get"
+        );
+        matchVar("response", "{ foo: ['bar', 'baz'] }");
+    }    
 
     @Test
     void testRequestBodyAsInteger() {
@@ -276,6 +320,19 @@ class KarateMockHandlerTest {
         );
         matchVar("response", "{ Cookie: ['#string'] }");
     }
+    
+    @Test
+    void testCookieMalformed() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = { 'Set-Cookie': '; Secure; HttpOnly' }");
+        run(
+                URL_STEP,
+                "path 'hello'",
+                "method get"
+        );
+        matchVar("responseHeaders", "{'Set-Cookie': ['; Secure; HttpOnly']}");        
+    }
 
     @Test
     void testFormFieldGet() {
@@ -306,6 +363,20 @@ class KarateMockHandlerTest {
     }
 
     @Test
+    void testFormFieldAsArray() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = request");
+        run(
+                URL_STEP,
+                "form field foo = ['bar1', 'bar2']",
+                "path 'hello'",
+                "method post"
+        );
+        matchVar("response", "foo=bar1&foo=bar2");
+    }
+
+    @Test
     void testMultiPartField() {
         background().scenario(
                 "pathMatches('/hello')",
@@ -320,11 +391,73 @@ class KarateMockHandlerTest {
     }
 
     @Test
+    void testMultiPartFieldWithInteger() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestParams");
+        run(
+                URL_STEP,
+                "def data = { foo: 'a', bar: 1}",
+                "multipart fields data",
+                "path 'hello'",
+                "method post"
+        );
+        matchVar("response", "{  foo: ['a'], bar: ['1'] } }");
+    }
+
+    @Test
+    void testMultiPartFieldWithFloat() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestParams");
+        run(
+                URL_STEP,
+                "def data = { foo: 1, bar: 2.0}",
+                "multipart fields data",
+                "path 'hello'",
+                "method post"
+        );
+        matchVar("response", "{ foo: ['1'], bar: ['2.0'] } }");
+    }
+
+    @Test
     void testMultiPartFile() {
         background().scenario(
                 "pathMatches('/hello')",
                 "def response = requestParts");
         run(
+                URL_STEP,
+                "multipart file foo = { filename: 'foo.txt', value: 'hello' }",
+                "path 'hello'",
+                "method post"
+        );
+        matchVar("response", "{ foo: [{ name: 'foo', value: '#notnull', contentType: 'text/plain', charset: 'UTF-8', filename: 'foo.txt', transferEncoding: '7bit' }] }");
+    }
+
+    @Test
+    void testMultiPartFiles() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestParts");
+        run(
+                URL_STEP,
+                "def file1 = { name: 'file', filename: 'file1.txt', value: 'Hello 1' }", 
+                "def file2 = { name: 'file', filename: 'file2.txt', value: 'Hello 2' }", 
+                "multipart files ([file1, file2])",
+                "path 'hello'",
+                "method post"
+        );
+        runtime.engine.assign(AssignType.STRING, "prevReqBody", "karate.prevRequest.body", false);
+        notContains(get("prevReqBody"), "multipart/mixed");
+    }
+
+    @Test
+    void testMultiPartFileNullCharset() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def response = requestParts");
+        run(
+                "configure charset = null",
                 URL_STEP,
                 "multipart file foo = { filename: 'foo.txt', value: 'hello' }",
                 "path 'hello'",
@@ -439,15 +572,32 @@ class KarateMockHandlerTest {
     }
 
     @Test
+    void testResponseContentTypeForNonXmlWithTagsAndCharset() {
+        background().scenario(
+                "pathMatches('/hello')",
+                "def responseHeaders = { 'Content-Type': 'text/turtle; charset=UTF-8' }",
+                "def response = '<http://example.org/#hello> a <http://example.org/#greeting> .'");
+        run(
+                URL_STEP,
+                "path 'hello'",
+                "method get",
+                "match header content-type contains 'text/turtle'",
+                "match header content-type != 'text/turtle'",
+                "match responseType == 'string'",
+                "match response == '<http://example.org/#hello> a <http://example.org/#greeting> .'"
+        );
+    }
+
+    @Test
     void testWildcardLikePathMatch() {
         background().scenario(
-                "requestUri.startsWith('hello/')",
+                "requestUri.startsWith('/hello/')",
                 "def response = requestUri");
         run(
                 URL_STEP,
                 "path 'hello', 'foo', 'bar'",
                 "method get",
-                "match response == 'hello/foo/bar'"
+                "match response == '/hello/foo/bar'"
         );
     }
 
@@ -461,7 +611,7 @@ class KarateMockHandlerTest {
                 " def temp = 'hello'",
                 "path temp",
                 "method get",
-                "match response == 'hello'"
+                "match response == '/hello'"
         );
     }
 
@@ -475,7 +625,7 @@ class KarateMockHandlerTest {
                 " def temp = ['hello', 'world']",
                 "path temp",
                 "method get",
-                "match response == 'hello/world'"
+                "match response == '/hello/world'"
         );
     }
 
@@ -488,7 +638,7 @@ class KarateMockHandlerTest {
                 URL_STEP,
                 "path '/hello/world'",
                 "method get",
-                "match response == 'hello/world'"
+                "match response == '/hello/world'"
         );
     }
 
@@ -501,8 +651,21 @@ class KarateMockHandlerTest {
                 URL_STEP,
                 "path '/hello\\\\/world'",
                 "method get",
-                "match response == 'hello/world'"
+                "match response == '/hello%2Fworld'"
         );
-    }  
+    }
+
+    @Test
+    void testPathWithTrailingSlash() {
+        background().scenario(
+                "pathMatches('/hello/world')",
+                "def response = requestUri");
+        run(
+                URL_STEP,
+                "path '/hello/world', '/'",
+                "method get",
+                "match response == '/hello/world/'"
+        );
+    }
 
 }

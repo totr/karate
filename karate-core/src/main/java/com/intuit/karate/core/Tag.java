@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,8 @@ public class Tag {
     public static final String IGNORE = "ignore";
     public static final String ENV = "env";
     public static final String ENVNOT = "envnot";
+    public static final String SETUP = "setup";
+    public static final String FAIL = "fail";
 
     private final int line;
     private final String text;

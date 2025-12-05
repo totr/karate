@@ -1,5 +1,7 @@
 # karate-gatling-demo
-demo sample project for karate [test-doubles](https://github.com/intuit/karate/tree/master/karate-netty) and [gatling integration](https://github.com/intuit/karate/tree/master/karate-gatling)
+demo sample project for karate [test-doubles](https://github.com/karatelabs/karate/tree/master/karate-netty) and [gatling integration](https://github.com/karatelabs/karate/tree/master/karate-gatling)
+
+> Another example which demos the use of the Java DSL instead of Scala can be found here: [karate-todo](https://github.com/karatelabs/karate-todo).
 
 ## Instructions
 

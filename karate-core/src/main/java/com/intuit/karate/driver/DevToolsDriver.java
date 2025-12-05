@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@ import com.intuit.karate.JsonUtils;
 import com.intuit.karate.Logger;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.core.Feature;
+import com.intuit.karate.core.FeatureCall;
 import com.intuit.karate.core.MockHandler;
 import com.intuit.karate.core.ScenarioEngine;
 import com.intuit.karate.core.Variable;
@@ -50,6 +51,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+
+import com.jayway.jsonpath.PathNotFoundException;
 import org.graalvm.polyglot.Value;
 
 /**
@@ -69,10 +72,12 @@ public abstract class DevToolsDriver implements Driver {
     private Integer windowId;
     private String windowState;
     protected String sessionId;
+    protected String mainFrameId;
 
     // iframe support
     private Frame frame;
     private final Map<String, Integer> frameContexts = new HashMap();
+    private final Map<String, String> frameSessions = new HashMap();
 
     protected boolean domContentEventFired;
     protected final Set<String> framesStillLoading = new HashSet();
@@ -104,6 +109,7 @@ public abstract class DevToolsDriver implements Driver {
         this.wait = new DevToolsWait(this, options);
         int pos = webSocketUrl.lastIndexOf('/');
         rootFrameId = webSocketUrl.substring(pos + 1);
+        mainFrameId = rootFrameId;
         logger.debug("root frame id: {}", rootFrameId);
         WebSocketOptions wsOptions = new WebSocketOptions(webSocketUrl);
         wsOptions.setMaxPayloadSize(options.maxPayloadSize);
@@ -158,7 +164,17 @@ public abstract class DevToolsDriver implements Driver {
         // do stuff inside wait to avoid missing messages
         DevToolsMessage result = wait.send(dtm, condition);
         if (result == null && !wasSubmit) {
-            throw new RuntimeException("failed to get reply for: " + dtm);
+            if (condition == DevToolsWait.ALL_FRAMES_LOADED) {
+                logger.error("failed to get reply for :" + dtm + ". Will try to check by running a script.");
+                boolean readyState = (Boolean) this.script("document.readyState === 'complete'");
+                if (!readyState) {
+                    throw new RuntimeException("failed to get reply for: " + dtm);
+                } else {
+                    logger.warn("document is ready, but no reply for: " + dtm + " with a ready event received. Will proceed.");
+                }
+            } else {
+                throw new RuntimeException("failed to get reply for: " + dtm);
+            }
         }
         return result;
     }
@@ -209,13 +225,30 @@ public abstract class DevToolsDriver implements Driver {
             framesStillLoading.clear();
         }
         if (dtm.methodIs("Runtime.consoleAPICalled") && options.showBrowserLog) {
-            List<String> values = dtm.getParam("args[*].value");
-            for (String value : values) {
+            List<Object> values = dtm.getParam("args[*].value");
+            for (Object value : values) {
                 logger.debug("[console] {}", value);
             }
         }
         if (dtm.methodIs("Fetch.requestPaused")) {
             handleInterceptedRequest(dtm);
+        }
+        if (dtm.methodIs("Target.targetInfoChanged")) {
+            String frameId = dtm.getParam("targetInfo.targetId");
+            Integer frameContextId = frameContexts.get(frameId);
+            if (frameContextId != null) {
+                logger.trace("** removed stale execution context: {} - {}", frameId, frameContextId);
+                frameContexts.remove(frameId);
+            }
+        }
+        if (dtm.methodIs("Target.attachedToTarget")) {
+            String targetType = dtm.getParam("targetInfo.type");
+            if ("iframe".equals(targetType) || "frame".equals(targetType)) {
+                String targetSessionId = dtm.getParam("sessionId");
+                String targetFrameId = dtm.getParam("targetInfo.targetId");
+                frameSessions.put(targetFrameId, targetSessionId);
+                logger.trace("** new frame session: {} - {}", targetFrameId, targetSessionId);
+            }
         }
         // all needed state is set above before we get into conditional checks
         wait.receive(dtm);
@@ -296,13 +329,23 @@ public abstract class DevToolsDriver implements Driver {
     protected String evalForObjectId(String expression) {
         return options.retry(() -> {
             DevToolsMessage dtm = evalInternal(expression, true, false);
-            return dtm.getResult("objectId", String.class);
+            return dtm.getResult("objectId");
         }, returned -> returned != null, "eval for object id: " + expression, true);
     }
 
     private DevToolsMessage evalInternal(String expression, boolean quickly, boolean returnByValue) {
         DevToolsMessage dtm = evalOnce(expression, quickly, false, returnByValue);
         if (dtm.isResultError()) {
+            Map<String, Object> error = dtm.getError();
+            if (error != null) {
+                Object errorCode = error.get("code");
+                if (errorCode instanceof Integer) {
+                    if ((Integer) errorCode == -32000) { // Object reference chain is too long
+                        dtm.setResult(Variable.NULL);
+                        return dtm;
+                    }
+                }
+            }
             String message = "js eval failed once:" + expression
                     + ", error: " + dtm.getResult();
             logger.warn(message);
@@ -330,7 +373,7 @@ public abstract class DevToolsDriver implements Driver {
     }
 
     protected int getRootNodeId() {
-        return method("DOM.getDocument").param("depth", 0).send().getResult("root.nodeId", Integer.class);
+        return method("DOM.getDocument").param("depth", 0).send().getResult("root.nodeId");
     }
 
     @Override
@@ -354,29 +397,34 @@ public abstract class DevToolsDriver implements Driver {
         return options;
     }
 
-    private void attachAndActivate(String targetId) {
+    private void attachAndActivate(String targetId, boolean isFrame) {
         DevToolsMessage dtm = method("Target.attachToTarget").param("targetId", targetId).param("flatten", true).send();
-        sessionId = dtm.getResult("sessionId", String.class);
+        sessionId = dtm.getResult("sessionId");
+        frameSessions.put(targetId, sessionId);
+        if (!isFrame) {
+            mainFrameId = targetId;
+        }
         method("Target.activateTarget").param("targetId", targetId).send();
+        method("Target.setDiscoverTargets").param("discover", true).send();
     }
 
     @Override
     public void activate() {
-        attachAndActivate(rootFrameId);
+        attachAndActivate(rootFrameId, false);
     }
 
     protected void initWindowIdAndState() {
         DevToolsMessage dtm = method("Browser.getWindowForTarget").param("targetId", rootFrameId).send();
         if (!dtm.isResultError()) {
-            windowId = dtm.getResult("windowId").getValue();
-            windowState = (String) dtm.getResult("bounds").<Map>getValue().get("windowState");
+            windowId = dtm.getResultVariable("windowId").getValue();
+            windowState = (String) dtm.getResultVariable("bounds").<Map>getValue().get("windowState");
         }
     }
 
     @Override
     public Map<String, Object> getDimensions() {
         DevToolsMessage dtm = method("Browser.getWindowForTarget").param("targetId", rootFrameId).send();
-        Map<String, Object> map = dtm.getResult("bounds").getValue();
+        Map<String, Object> map = dtm.getResultVariable("bounds").getValue();
         Integer x = (Integer) map.remove("left");
         Integer y = (Integer) map.remove("top");
         map.put("x", x);
@@ -411,6 +459,7 @@ public abstract class DevToolsDriver implements Driver {
     @Override
     public void close() {
         method("Page.close").sendWithoutWaiting();
+        sessionId = frameSessions.get(rootFrameId);
     }
 
     @Override
@@ -452,8 +501,8 @@ public abstract class DevToolsDriver implements Driver {
 
     private void history(int delta) {
         DevToolsMessage dtm = method("Page.getNavigationHistory").send();
-        int currentIndex = dtm.getResult("currentIndex").getValue();
-        List<Map> list = dtm.getResult("entries").getValue();
+        int currentIndex = dtm.getResultVariable("currentIndex").getValue();
+        List<Map> list = dtm.getResultVariable("entries").getValue();
         int targetIndex = currentIndex + delta;
         if (targetIndex < 0 || targetIndex == list.size()) {
             return;
@@ -545,31 +594,35 @@ public abstract class DevToolsDriver implements Driver {
         return DriverElement.locatorExists(this, locator);
     }
 
-    private void sendKey(char c, int modifiers, String type, Integer keyCode) {
+    private void sendKey(Character c, int modifiers, String type, Integer keyCode) {
         DevToolsMessage dtm = method("Input.dispatchKeyEvent")
                 .param("modifiers", modifiers)
                 .param("type", type);
         if (keyCode == null) {
-            dtm.param("text", c + "");
+            if (c != null) {
+                dtm.param("text", c.toString());
+            }
         } else {
             switch (keyCode) {
-                case 13:
-                    dtm.param("text", "\r"); // important ! \n does NOT work for chrome
-                    break;
-                case 9: // TAB
+                case 9: // tab
                     if ("char".equals(type)) {
                         return; // special case
                     }
                     dtm.param("text", "");
                     break;
-                case 46: // DOT
+                case 13: // enter
+                    dtm.param("text", "\r"); // important ! \n does NOT work for chrome
+                    break;
+                case 46: // dot
                     if ("rawKeyDown".equals(type)) {
                         dtm.param("type", "keyDown"); // special case
                     }
                     dtm.param("text", ".");
                     break;
                 default:
-                    dtm.param("text", c + "");
+                    if (c != null) {
+                        dtm.param("text", c.toString());
+                    }
             }
             dtm.param("windowsVirtualKeyCode", keyCode);
         }
@@ -587,13 +640,29 @@ public abstract class DevToolsDriver implements Driver {
             int modifiers = input.getModifierFlags();
             Integer keyCode = Keys.code(c);
             if (keyCode != null) {
-                sendKey(c, modifiers, "rawKeyDown", keyCode);
-                sendKey(c, modifiers, "char", keyCode);
-                sendKey(c, modifiers, "keyUp", keyCode);
+                switch (keyCode) {
+                    case Keys.CODE_SHIFT:
+                    case Keys.CODE_CONTROL:
+                    case Keys.CODE_ALT:
+                    case Keys.CODE_META:
+                        if (input.release) {
+                            sendKey(null, modifiers, "keyUp", keyCode);
+                        } else {
+                            sendKey(null, modifiers, "rawKeyDown", keyCode);
+                        }
+                        break;
+                    default:
+                        sendKey(c, modifiers, "rawKeyDown", keyCode);
+                        sendKey(c, modifiers, "char", keyCode);
+                        sendKey(c, modifiers, "keyUp", keyCode);
+                }
             } else {
                 logger.warn("unknown character / key code: {}", c);
                 sendKey(c, modifiers, "char", null);
             }
+        }
+        for (int keyCode : input.getKeyCodesToRelease()) {
+            sendKey(null, 0, "keyUp", keyCode);
         }
         return DriverElement.locatorExists(this, locator);
     }
@@ -733,7 +802,7 @@ public abstract class DevToolsDriver implements Driver {
     @Override
     public List<Map> getCookies() {
         DevToolsMessage dtm = method("Network.getAllCookies").send();
-        return dtm.getResult("cookies").getValue();
+        return dtm.getResultVariable("cookies").getValue();
     }
 
     @Override
@@ -792,7 +861,7 @@ public abstract class DevToolsDriver implements Driver {
     @Override
     public byte[] pdf(Map<String, Object> options) {
         DevToolsMessage dtm = method("Page.printToPDF").params(options).send();
-        String temp = dtm.getResult("data").getAsString();
+        String temp = dtm.getResultVariable("data").getAsString();
         return Base64.getDecoder().decode(temp);
     }
 
@@ -819,42 +888,51 @@ public abstract class DevToolsDriver implements Driver {
     @Override
     public byte[] screenshot(String id, boolean embed) {
         DevToolsMessage dtm;
-        if (id == null) {
-            dtm = method("Page.captureScreenshot").send();
-        } else {
-            Map<String, Object> map = position(id);
-            map.put("scale", 1);
-            dtm = method("Page.captureScreenshot").param("clip", map).send();
+        try {
+            if (id == null) {
+                dtm = method("Page.captureScreenshot").send();
+            } else {
+                Map<String, Object> map = position(id);
+                map.put("scale", 1);
+                dtm = method("Page.captureScreenshot").param("clip", map).send();
+            }
+            if (dtm == null) {
+                logger.error("unable to capture screenshot - no data returned");
+                return Constants.ZERO_BYTES;
+            }
+            String temp = dtm.getResultVariable("data").getAsString();
+            byte[] bytes = Base64.getDecoder().decode(temp);
+            if (embed) {
+                getRuntime().embed(bytes, ResourceType.PNG);
+            }
+            return bytes;
+        } catch (Exception e) { // rare case where message does not get a reply
+            logger.error("screenshot failed: {}", e.getMessage());
+            return Constants.ZERO_BYTES;
         }
-        String temp = dtm.getResult("data").getAsString();
-        byte[] bytes = Base64.getDecoder().decode(temp);
-        if (embed) {
-            getRuntime().embed(bytes, ResourceType.PNG);
-        }
-        return bytes;
     }
 
     // chrome only
     public byte[] screenshotFull() {
         DevToolsMessage layout = method("Page.getLayoutMetrics").send();
-        Map<String, Object> size = layout.getResult("contentSize").getValue();
+        Map<String, Object> size = layout.getResultVariable("cssContentSize").getValue();
         Map<String, Object> map = options.newMapWithSelectedKeys(size, "height", "width");
         map.put("x", 0);
         map.put("y", 0);
         map.put("scale", 1);
-        DevToolsMessage dtm = method("Page.captureScreenshot").param("clip", map).send();
+        DevToolsMessage dtm = method("Page.captureScreenshot").param("clip", map).param("captureBeyondViewport", true).send();
         if (dtm.isResultError()) {
             logger.error("unable to capture screenshot: {}", dtm);
             return new byte[0];
         }
-        String temp = dtm.getResult("data").getAsString();
+        String temp = dtm.getResultVariable("data").getAsString();
         return Base64.getDecoder().decode(temp);
     }
 
     @Override
     public List<String> getPages() {
         DevToolsMessage dtm = method("Target.getTargets").send();
-        return dtm.getResult("targetInfos.targetId").getValue();
+        return dtm.getResultVariable("targetInfos.targetId").getValue();
     }
 
     @Override
@@ -864,7 +942,7 @@ public abstract class DevToolsDriver implements Driver {
         }
         String targetId = options.retry(() -> {
             DevToolsMessage dtm = method("Target.getTargets").send();
-            List<Map> targets = dtm.getResult("targetInfos").getValue();
+            List<Map> targets = dtm.getResultVariable("targetInfos").getValue();
             for (Map map : targets) {
                 String title = (String) map.get("title");
                 String url = (String) map.get("url");
@@ -875,7 +953,7 @@ public abstract class DevToolsDriver implements Driver {
             }
             return null;
         }, returned -> returned != null, "waiting to switch to tab: " + titleOrUrl, true);
-        attachAndActivate(targetId);
+        attachAndActivate(targetId, false);
     }
 
     @Override
@@ -884,11 +962,11 @@ public abstract class DevToolsDriver implements Driver {
             return;
         }
         DevToolsMessage dtm = method("Target.getTargets").send();
-        List<Map> targets = dtm.getResult("targetInfos").getValue();
+        List<Map> targets = dtm.getResultVariable("targetInfos").getValue();
         if (index < targets.size()) {
             Map target = targets.get(index);
             String targetId = (String) target.get("targetId");
-            attachAndActivate(targetId);
+            attachAndActivate(targetId, false);
         } else {
             logger.warn("failed to switch frame by index: {}", index);
         }
@@ -898,6 +976,7 @@ public abstract class DevToolsDriver implements Driver {
     public void switchFrame(int index) {
         if (index == -1) {
             frame = null;
+            sessionId = frameSessions.get(mainFrameId);
             return;
         }
         List<String> objectIds = elementIds("iframe,frame");
@@ -915,6 +994,7 @@ public abstract class DevToolsDriver implements Driver {
     public void switchFrame(String locator) {
         if (locator == null) {
             frame = null;
+            sessionId = frameSessions.get(mainFrameId);
             return;
         }
         retryIfEnabled(locator);
@@ -938,34 +1018,91 @@ public abstract class DevToolsDriver implements Driver {
                 .param("objectId", objectId)
                 .param("depth", 0)
                 .send();
-        String frameId = dtm.getResult("node.frameId", String.class);
+        String frameId = dtm.getResult("node.frameId");
         if (frameId == null) {
             return false;
         }
         dtm = method("Page.getFrameTree").send();
         frame = null;
-        List<Map> frames = dtm.getResult("frameTree.childFrames[*].frame", List.class);
-        for (Map<String, Object> map : frames) {
-            String temp = (String) map.get("id");
-            if (frameId.equals(temp)) {
-                String frameUrl = (String) map.get("url");
-                String frameName = (String) map.get("name");
-                frame = new Frame(frameId, frameUrl, frameName);
-                logger.trace("** switched to frame: {}", frame);
-                break;
+        try {
+            List<Map> childFrames = dtm.getResult("frameTree.childFrames[*]");
+            List<Map> flattenFrameTree = getFrameTree(childFrames);
+            for (Map<String, Object> frameMap : flattenFrameTree) {
+                String frameMapTemp = (String) frameMap.get("id");
+                if (frameId.equals(frameMapTemp)) {
+                    String frameUrl = (String) frameMap.get("url");
+                    String frameName = (String) frameMap.get("name");
+                    frame = new Frame(frameId, frameUrl, frameName);
+                    logger.trace("** switched to frame: {}", frame);
+                    break;
+                }
+            }
+        } catch (PathNotFoundException e) {
+            logger.trace("** childFrames not found. Will try to change to a different Target in Chrome.");
+        }
+
+        if (frame == null) {
+            // for some reason need to trigger Target.getTargets before attaching
+            dtm = method("Target.getTargets").send();
+            if (frameSessions.get(frameId) == null) {
+                // attempt to force attach (see: https://github.com/karatelabs/karate/pull/1944#issuecomment-1070793461)
+                attachAndActivate(frameId, true);
+            }
+
+            List<Map<String, Object>> targetInfos = dtm.getResult("targetInfos");
+            for (Map<String, Object> targetInfo : targetInfos) {
+                String temp = (String) targetInfo.get("targetId");
+                String tempType = (String) targetInfo.get("type");
+                if (frameId.equals(temp) && ("iframe".equals(tempType) || "frame".equals(tempType))) {
+                    String frameUrl = (String) targetInfo.get("url");
+                    String frameName = (String) targetInfo.get("title");
+                    frame = new Frame(frameId, frameUrl, frameName);
+                    logger.trace("** switched to frame: {}", frame);
+                }
             }
         }
+
         if (frame == null) {
             return false;
         }
+
+        if (frameSessions.get(frameId) != null) {
+            sessionId = frameSessions.get(frameId);
+        } else {
+            // attach to frame / target / process with the frame
+            attachAndActivate(frameId, true);
+
+            // a null sessionId indicates that we failed to attach directly to the frame
+            // this occurs on local frames that are already being debugged with the main frame
+            if (sessionId == null) {
+                sessionId = frameSessions.get(mainFrameId);
+            }
+        }
+
         Integer contextId = getFrameContext();
         if (contextId != null) {
             return true;
         }
         dtm = method("Page.createIsolatedWorld").param("frameId", frameId).send();
-        contextId = dtm.getResult("executionContextId").getValue();
+        contextId = dtm.getResult("executionContextId");
         frameContexts.put(frameId, contextId);
         return true;
+    }
+
+    private List<Map> getFrameTree(List<Map> frames) {
+        List<Map> resultFrames = new ArrayList<>();
+        for (Map frame : frames) {
+            Map currFrame = (Map) frame.get("frame");
+            List<Map> childFrames = (List<Map>) frame.get("childFrames");
+            if (currFrame != null) {
+                resultFrames.add((Map) frame.get("frame"));
+            }
+
+            if (childFrames != null) {
+                resultFrames.addAll(getFrameTree(childFrames));
+            }
+        }
+        return resultFrames;
     }
 
     public void enableNetworkEvents() {
@@ -980,13 +1117,13 @@ public abstract class DevToolsDriver implements Driver {
         method("Runtime.enable").send();
     }
 
-    public void intercept(Value value) {
+    public DevToolsMock intercept(Value value) {
         Map<String, Object> config = (Map) JsValue.toJava(value);
         config = new Variable(config).getValue();
-        intercept(config);
+        return intercept(config);
     }
 
-    public void intercept(Map<String, Object> config) {
+    public DevToolsMock intercept(Map<String, Object> config) {
         List<String> patterns = (List) config.get("patterns");
         if (patterns == null) {
             throw new RuntimeException("missing array argument 'patterns': " + config);
@@ -999,12 +1136,13 @@ public abstract class DevToolsDriver implements Driver {
             throw new RuntimeException("missing argument 'mock': " + config);
         }
         Object o = getRuntime().engine.fileReader.readFile(mock);
-        if (!(o instanceof Feature)) {
+        if (!(o instanceof FeatureCall)) {
             throw new RuntimeException("'mock' is not a feature file: " + config + ", " + mock);
         }
-        Feature feature = (Feature) o;
-        mockHandler = new MockHandler(feature);
+        FeatureCall fc = (FeatureCall) o;
+        mockHandler = new MockHandler(fc.feature);
         method("Fetch.enable").param("patterns", patterns).send();
+        return new DevToolsMock(mockHandler);
     }
 
     public void inputFile(String locator, String... relativePaths) {

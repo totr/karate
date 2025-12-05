@@ -119,6 +119,13 @@ class JsEngineTest {
         assertTrue(ov.canExecute());
         assertFalse(ov.isHostObject());
     }
+    
+    @Test
+    void testJsNestedArraysToJava() {
+        je.eval("var StaticPojo = Java.type('com.intuit.karate.graal.StaticPojo')");
+        JsValue sp = je.eval("StaticPojo.convert({foo:[{a:1}]})");
+        assertEquals("{\"foo\":[{\"a\":1}]}", sp.getAsString()); // bug fixed in graal 22.1
+    }
 
     @Test
     void testJsOperations() {
@@ -246,6 +253,17 @@ class JsEngineTest {
         Value result = function.execute(JsValue.fromJava(map));
         assertEquals(result.asInt(), 3);
     }
+    
+    @Test
+    void testObjectsWithinFunction() {
+        Map<String, Object> map = new HashMap();
+        map.put("a", 1);
+        map.put("b", 2);
+        je.put("o", map);
+        JsValue jv = je.eval("(function(){ return Object.entries(o) })()");
+        List result = jv.getAsList();
+        Match.that(result).isEqualTo("[[a, 1],[b, 2]]");
+    }     
 
     @Test
     void testEvalLocal() {

@@ -1,11 +1,6 @@
 package com.intuit.karate;
 
-import com.intuit.karate.core.Config;
-import com.intuit.karate.core.Feature;
-import com.intuit.karate.core.FeatureRuntime;
-import com.intuit.karate.core.ScenarioEngine;
-import com.intuit.karate.core.ScenarioIterator;
-import com.intuit.karate.core.ScenarioRuntime;
+import com.intuit.karate.core.*;
 import com.intuit.karate.core.runner.NoopDriver;
 import com.intuit.karate.driver.DriverRunner;
 import com.intuit.karate.http.HttpClientFactory;
@@ -36,6 +31,11 @@ public class TestUtils {
         Match.Result mr = Match.evaluate(actual).contains(expected);
         assertTrue(mr.pass, mr.message);
     }
+    
+    public static void notContains(Object actual, Object expected) {
+        Match.Result mr = Match.evaluate(actual).isNotContaining(expected);
+        assertTrue(mr.pass, mr.message);
+    }
 
     public static ScenarioEngine engine() {
         return new ScenarioEngine(new Config(), runtime(), new HashMap(), new Logger());
@@ -44,8 +44,16 @@ public class TestUtils {
     public static Feature toFeature(String... lines) {
         StringBuilder sb = new StringBuilder();
         sb.append("Feature:\nScenario:\n");
+        boolean inDocString = false;
         for (String line : lines) {
-            sb.append("* ").append(line).append('\n');
+            if (line.trim().startsWith(FeatureParser.TRIPLE_QUOTES)) {
+                inDocString = !inDocString; // toggle
+                sb.append(line).append('\n');
+            } else if (inDocString) {
+                sb.append(line).append('\n');
+            } else {
+                sb.append("* ").append(line).append('\n');
+            }
         }
         File file = ResourceUtils.getFileRelativeTo(TestUtils.class, "core/dummy.feature");
         Resource resource = new MemoryResource(file, sb.toString());
@@ -54,7 +62,7 @@ public class TestUtils {
 
     public static ScenarioRuntime runtime() {
         Feature feature = toFeature("* print 'test'");
-        FeatureRuntime fr = FeatureRuntime.of(feature);
+        FeatureRuntime fr = FeatureRuntime.of(new FeatureCall(feature));
         return new ScenarioIterator(fr).first();
     }
 
@@ -69,7 +77,7 @@ public class TestUtils {
         if (configDir != null) {
             builder.configDir = configDir;
         }
-        FeatureRuntime fr = FeatureRuntime.of(new Suite(builder), feature);
+        FeatureRuntime fr = FeatureRuntime.of(new Suite(builder), new FeatureCall(feature));
         ScenarioRuntime sr = new ScenarioIterator(fr).first();
         sr.run();
         return sr;
@@ -87,7 +95,7 @@ public class TestUtils {
         rb.features(feature);
         rb.configDir(configDir);
         rb.customDrivers(customDrivers);
-        FeatureRuntime fr = FeatureRuntime.of(new Suite(rb), feature);
+        FeatureRuntime fr = FeatureRuntime.of(new Suite(rb), new FeatureCall(feature));
         fr.run();
         return fr;
     }

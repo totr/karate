@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,11 +27,8 @@ import com.intuit.karate.FileUtils;
 import com.intuit.karate.StringUtils;
 import com.intuit.karate.driver.DockerTarget;
 import com.intuit.karate.driver.Target;
-import com.intuit.karate.graal.JsEngine;
-import com.intuit.karate.graal.JsFunction;
 import com.intuit.karate.http.Cookies;
 import com.intuit.karate.http.HttpLogModifier;
-import org.graalvm.polyglot.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +36,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -53,7 +51,15 @@ public class Config {
     public static final int DEFAULT_RETRY_COUNT = 3;
     public static final int DEFAULT_TIMEOUT = 30000;
     public static final int DEFAULT_HIGHLIGHT_DURATION = 3000;
+    
+    public static final String DRIVER = "driver";
+    public static final String ROBOT = "robot";
+    public static final String KAFKA = "kafka";
+    public static final String GRPC = "grpc";
+    public static final String WEBSOCKET = "websocket";
+    public static final String WEBHOOK = "webhook";
 
+    private String url;
     private boolean sslEnabled = false;
     private String sslAlgorithm = "TLS";
     private String sslKeyStore;
@@ -73,6 +79,7 @@ public class Config {
     private List<String> nonProxyHosts;
     private String localAddress;
     private int responseDelay;
+    private boolean xmlNamespaceAware = false;
     private boolean lowerCaseResponseHeaders = false;
     private boolean corsEnabled = false;
     private boolean logPrettyRequest;
@@ -80,18 +87,20 @@ public class Config {
     private boolean printEnabled = true;
     private boolean pauseIfNotPerf = false;
     private boolean abortedStepsShouldPass = false;
+    private boolean matchEachEmptyAllowed = false;
     private Target driverTarget;
-    private Map<String, Object> driverOptions;
-    private Map<String, Object> robotOptions; // TODO make generic plugin model
+    private Map<String, Map<String, Object>> customOptions = new HashMap();
     private HttpLogModifier logModifier;
 
     private Variable afterScenario = Variable.NULL;
+    private Variable afterScenarioOutline = Variable.NULL;
     private Variable afterFeature = Variable.NULL;
     private Variable headers = Variable.NULL;
     private Variable cookies = Variable.NULL;
     private Variable responseHeaders = Variable.NULL;
     private List<Method> continueOnStepFailureMethods = new ArrayList<>();
     private boolean continueAfterContinueOnStepFailure;
+    private boolean abortSuiteOnFailure;
 
     // retry config
     private int retryInterval = DEFAULT_RETRY_INTERVAL;
@@ -105,40 +114,19 @@ public class Config {
     private int callSingleCacheMinutes = 0;
     private String callSingleCacheDir = FileUtils.getBuildDir();
 
+    // image comparison config
+    private Map<String, Object> imageComparisonOptions;
+
+    // ntlm authentication
+    private boolean ntlmEnabled = false;
+    private boolean httpRetryEnabled = false;
+    private String ntlmUsername;
+    private String ntlmPassword;
+    private String ntlmDomain;
+    private String ntlmWorkstation;
+
     public Config() {
         // zero arg constructor
-    }
-
-    private static Variable attach(Variable v, JsEngine je) {
-        if (v.isJsFunctionWrapper()) {
-            JsFunction jf = v.getValue();
-            Value attached = je.attachSource(jf.source);
-            return new Variable(attached);
-        } else {
-            return v;
-        }
-    }
-
-    private static Variable detach(Variable v) {
-        if (v.isJsFunction()) {
-            return new Variable(new JsFunction(v.getValue()));
-        } else {
-            return v;
-        }
-    }
-
-    protected void attach(JsEngine je) {
-        afterScenario = attach(afterScenario, je);
-        afterFeature = attach(afterFeature, je);
-        headers = attach(headers, je);
-        cookies = attach(cookies, je);
-    }
-
-    protected void detach() {
-        afterScenario = detach(afterScenario);
-        afterFeature = detach(afterFeature);
-        headers = detach(headers);
-        cookies = detach(cookies);
     }
 
     private static <T> T get(Map<String, Object> map, String key, T defaultValue) {
@@ -149,6 +137,9 @@ public class Config {
     public boolean configure(String key, Variable value) { // TODO use enum
         key = StringUtils.trimToEmpty(key);
         switch (key) {
+            case "url":
+                url = value.getAsString();
+                return false;
             case "headers":
                 headers = value;
                 return false;
@@ -163,6 +154,9 @@ public class Config {
                 return false;
             case "responseDelay":
                 responseDelay = value.isNull() ? 0 : value.getAsInt();
+                return false;
+            case "xmlNamespaceAware":
+                xmlNamespaceAware = value.isTrue();
                 return false;
             case "lowerCaseResponseHeaders":
                 lowerCaseResponseHeaders = value.isTrue();
@@ -182,6 +176,9 @@ public class Config {
             case "afterScenario":
                 afterScenario = value;
                 return false;
+            case "afterScenarioOutline":
+                afterScenarioOutline = value;
+                return false;
             case "afterFeature":
                 afterFeature = value;
                 return false;
@@ -198,11 +195,13 @@ public class Config {
                     showAllSteps = false;
                 }
                 return false;
-            case "driver":
-                driverOptions = value.getValue();
-                return false;
-            case "robot":
-                robotOptions = value.getValue();
+            case DRIVER:
+            case ROBOT:
+            case KAFKA:
+            case GRPC:
+            case WEBSOCKET:
+            case WEBHOOK:
+                customOptions.put(key, value.getValue());
                 return false;
             case "driverTarget":
                 if (value.isMap()) {
@@ -230,6 +229,9 @@ public class Config {
             case "abortedStepsShouldPass":
                 abortedStepsShouldPass = value.isTrue();
                 return false;
+            case "abortSuiteOnFailure":
+                abortSuiteOnFailure = value.isTrue();
+                return false;
             case "callSingleCache":
                 if (value.isMap()) {
                     Map<String, Object> map = value.getValue();
@@ -237,13 +239,44 @@ public class Config {
                     callSingleCacheDir = get(map, "dir", callSingleCacheDir);
                 }
                 return false;
-            case "charset":
-                charset = value.isNull() ? null : Charset.forName(value.getAsString());
-                return false;
             case "logModifier":
                 logModifier = value.getValue();
                 return false;
+            case "imageComparison":
+                imageComparisonOptions = value.getValue();
+                return false;
+            case "matchEachEmptyAllowed":
+                matchEachEmptyAllowed = value.getValue();
+                return false;
+            case "continueOnStepFailure":
+                continueOnStepFailureMethods.clear(); // clears previous configuration - in case someone is trying to chain these and forgets resetting the previous one
+                boolean enableContinueOnStepFailureFeature = false;
+                Boolean continueAfterIgnoredFailure = null;
+                List<String> stepKeywords = null;
+                if (value.isMap()) {
+                    Map<String, Object> map = value.getValue();
+                    stepKeywords = (List<String>) map.get("keywords");
+                    continueAfterIgnoredFailure = (Boolean) map.get("continueAfter");
+                    enableContinueOnStepFailureFeature = map.get("enabled") != null && (Boolean) map.get("enabled");
+                }
+                if (value.isTrue() || enableContinueOnStepFailureFeature) {
+                    continueOnStepFailureMethods.addAll(stepKeywords == null ? StepRuntime.METHOD_MATCH : StepRuntime.findMethodsByKeywords(stepKeywords));
+                } else {
+                    if (stepKeywords == null) {
+                        continueOnStepFailureMethods.clear();
+                    } else {
+                        continueOnStepFailureMethods.removeAll(StepRuntime.findMethodsByKeywords(stepKeywords));
+                    }
+                }
+                if (continueAfterIgnoredFailure != null) {
+                    continueAfterContinueOnStepFailure = continueAfterIgnoredFailure;
+                }
+                return false;
             // here on the http client has to be re-constructed ================
+            // and we return true instead of false
+            case "charset":
+                charset = value.isNull() ? null : Charset.forName(value.getAsString());
+                return true;
             case "ssl":
                 if (value.isString()) {
                     sslEnabled = true;
@@ -276,7 +309,7 @@ public class Config {
                 readTimeout = value.getAsInt();
                 return true;
             case "proxy":
-                if (value == null) {
+                if (value.isNull()) {
                     proxyUri = null;
                 } else if (value.isString()) {
                     proxyUri = value.getAsString();
@@ -288,36 +321,23 @@ public class Config {
                     nonProxyHosts = (List) map.get("nonProxyHosts");
                 }
                 return true;
+            case "httpRetryEnabled":
+                httpRetryEnabled = value.isTrue();
+                return true;
             case "localAddress":
                 localAddress = value.getAsString();
                 return true;
-            case "continueOnStepFailure":
-                continueOnStepFailureMethods.clear(); // clears previous configuration - in case someone is trying to chain these and forgets resetting the previous one
-
-                boolean enableContinueOnStepFailureFeature = false;
-                Boolean continueAfterIgnoredFailure = null;
-
-                List<String> stepKeywords = null;
-                if (value.isMap()) {
-                    Map<String, Object> map = value.getValue();
-                    stepKeywords = (List<String>) map.get("keywords");
-                    continueAfterIgnoredFailure = (Boolean) map.get("continueAfter");
-                    enableContinueOnStepFailureFeature = map.get("enabled") != null && (Boolean) map.get("enabled");
-                }
-
-                if (value.isTrue() || enableContinueOnStepFailureFeature) {
-                    continueOnStepFailureMethods.addAll(stepKeywords == null ? StepRuntime.METHOD_MATCH : StepRuntime.findMethodsByKeywords(stepKeywords));
+            case "ntlmAuth":
+                if (value.isNull()) {
+                    ntlmEnabled = false;
                 } else {
-                    if (stepKeywords == null) {
-                        continueOnStepFailureMethods.clear();
-                    } else {
-                        continueOnStepFailureMethods.removeAll(StepRuntime.findMethodsByKeywords(stepKeywords));
-                    }
+                    Map<String, Object> map = value.getValue();
+                    ntlmEnabled = true;
+                    ntlmUsername = (String) map.get("username");
+                    ntlmPassword = (String) map.get("password");
+                    ntlmDomain = (String) map.get("domain");
+                    ntlmWorkstation = (String) map.get("workstation");
                 }
-                if (continueAfterIgnoredFailure != null) {
-                    continueAfterContinueOnStepFailure = continueAfterIgnoredFailure;
-                }
-
                 return true;
             default:
                 throw new RuntimeException("unexpected 'configure' key: '" + key + "'");
@@ -325,6 +345,7 @@ public class Config {
     }
 
     public Config(Config parent) {
+        url = parent.url;
         sslEnabled = parent.sslEnabled;
         sslAlgorithm = parent.sslAlgorithm;
         sslTrustStore = parent.sslTrustStore;
@@ -344,14 +365,14 @@ public class Config {
         nonProxyHosts = parent.nonProxyHosts;
         localAddress = parent.localAddress;
         responseDelay = parent.responseDelay;
+        xmlNamespaceAware = parent.xmlNamespaceAware;
         lowerCaseResponseHeaders = parent.lowerCaseResponseHeaders;
         corsEnabled = parent.corsEnabled;
         logPrettyRequest = parent.logPrettyRequest;
         logPrettyResponse = parent.logPrettyResponse;
         printEnabled = parent.printEnabled;
-        driverOptions = parent.driverOptions;
-        robotOptions = parent.robotOptions;
         driverTarget = parent.driverTarget;
+        customOptions = parent.customOptions;
         showLog = parent.showLog;
         showAllSteps = parent.showAllSteps;
         retryInterval = parent.retryInterval;
@@ -365,10 +386,28 @@ public class Config {
         cookies = parent.cookies;
         responseHeaders = parent.responseHeaders;
         afterScenario = parent.afterScenario;
+        afterScenarioOutline = parent.afterScenarioOutline;
         afterFeature = parent.afterFeature;
         continueOnStepFailureMethods = parent.continueOnStepFailureMethods;
         continueAfterContinueOnStepFailure = parent.continueAfterContinueOnStepFailure;
+        abortSuiteOnFailure = parent.abortSuiteOnFailure;
+        imageComparisonOptions = parent.imageComparisonOptions;
+        matchEachEmptyAllowed = parent.matchEachEmptyAllowed;
+        ntlmEnabled = parent.ntlmEnabled;
+        httpRetryEnabled = parent.httpRetryEnabled;
+        ntlmUsername = parent.ntlmUsername;
+        ntlmPassword = parent.ntlmPassword;
+        ntlmDomain = parent.ntlmDomain;
+        ntlmWorkstation = parent.ntlmWorkstation;
     }
+
+    public void setUrl(String url) {
+        this.url = url;
+    }
+
+    public String getUrl() {
+        return url;
+    }        
 
     public void setCookies(Variable cookies) {
         this.cookies = cookies;
@@ -462,6 +501,10 @@ public class Config {
         return responseDelay;
     }
 
+    public boolean isXmlNamespaceAware() {
+        return xmlNamespaceAware;
+    }
+
     public boolean isLowerCaseResponseHeaders() {
         return lowerCaseResponseHeaders;
     }
@@ -482,13 +525,15 @@ public class Config {
         return printEnabled;
     }
 
-    public Map<String, Object> getDriverOptions() {
-        return driverOptions;
+    public boolean isHttpRetryEnabled()
+    {
+        return httpRetryEnabled;
     }
 
-    public Map<String, Object> getRobotOptions() {
-        return robotOptions;
-    }
+
+    public Map<String, Map<String, Object>> getCustomOptions() {
+        return customOptions;
+    }    
 
     public Variable getAfterScenario() {
         return afterScenario;
@@ -496,6 +541,14 @@ public class Config {
 
     public void setAfterScenario(Variable afterScenario) {
         this.afterScenario = afterScenario;
+    }
+
+    public Variable getAfterScenarioOutline() {
+        return afterScenarioOutline;
+    }
+
+    public void setAfterScenarioOutline(Variable afterScenarioOutline) {
+        this.afterScenarioOutline = afterScenarioOutline;
     }
 
     public Variable getAfterFeature() {
@@ -582,4 +635,64 @@ public class Config {
         this.continueAfterContinueOnStepFailure = continueAfterContinueOnStepFailure;
     }
 
+    public void setAbortSuiteOnFailure(boolean abortSuiteOnFailure) {
+        this.abortSuiteOnFailure = abortSuiteOnFailure;
+    }
+
+    public boolean isAbortSuiteOnFailure() {
+        return abortSuiteOnFailure;
+    }
+
+    public Map<String, Object> getImageComparisonOptions() {
+        return imageComparisonOptions;
+    }
+
+    public boolean isMatchEachEmptyAllowed() {
+        return matchEachEmptyAllowed;
+    }        
+
+    public boolean isNtlmEnabled() {
+        return ntlmEnabled;
+    }
+
+    public void setNtlmEnabled(boolean ntlmEnabled) {
+        this.ntlmEnabled = ntlmEnabled;
+    }
+
+    public String getNtlmUsername() {
+        return ntlmUsername;
+    }
+
+    public void setNtlmUsername(String ntlmUsername) {
+        this.ntlmUsername = ntlmUsername;
+    }
+
+    public String getNtlmPassword() {
+        return ntlmPassword;
+    }
+
+    public void setNtlmPassword(String ntlmPassword) {
+        this.ntlmPassword = ntlmPassword;
+    }
+
+    public String getNtlmDomain() {
+        return ntlmDomain;
+    }
+
+    public void setNtlmDomain(String ntlmDomain) {
+        this.ntlmDomain = ntlmDomain;
+    }
+
+    public String getNtlmWorkstation() {
+        return ntlmWorkstation;
+    }
+
+    public void setNtlmWorkstation(String ntlmWorkstation) {
+        this.ntlmWorkstation = ntlmWorkstation;
+    }
+
+    public void setHttpRetryEnabled(boolean httpRetryEnabled)
+    {
+        this.httpRetryEnabled = httpRetryEnabled;
+    }
 }

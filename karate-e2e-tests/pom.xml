@@ -3,23 +3,25 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.intuit.karate</groupId>
+        <groupId>io.karatelabs</groupId>
         <artifactId>karate-parent</artifactId>
-        <version>1.1.0</version>
+        <version>1.5.2</version>
     </parent>
     <artifactId>karate-e2e-tests</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>        
         <dependency>
-            <groupId>com.intuit.karate</groupId>
-            <artifactId>karate-core</artifactId>
+            <groupId>io.karatelabs</groupId>
+            <artifactId>karate-playwright</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>         
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
             <version>${junit5.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -40,13 +42,13 @@
         </testResources>
         <plugins>
             <plugin>
-                <groupId>org.sonatype.plugins</groupId>
-                <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>${nexus.staging.plugin.version}</version>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>${central.publishing.maven.plugin.version}</version>
                 <configuration>
-                    <skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
+                    <skipPublishing>true</skipPublishing>
                 </configuration>
-            </plugin>            
+            </plugin>
         </plugins>
     </build>           
     

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@ package com.intuit.karate.resource;
 
 import com.intuit.karate.FileUtils;
 import com.intuit.karate.core.Feature;
+import com.intuit.karate.core.FeatureCall;
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ResourceList;
 import io.github.classgraph.ScanResult;
@@ -40,10 +41,8 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -54,45 +53,52 @@ import org.slf4j.LoggerFactory;
  * @author pthomas3
  */
 public class ResourceUtils {
-
+    
     private static final Logger logger = LoggerFactory.getLogger(ResourceUtils.class);
-
+    
     private ResourceUtils() {
         // only static methods
     }
-
-    public static List<Feature> findFeatureFiles(File workingDir, List<String> paths) {
-        List<Feature> features = new ArrayList();
+    
+    public static List<FeatureCall> findFeatureFiles(File workingDir, List<String> paths, String scenarioName) {
+        List<FeatureCall> features = new ArrayList();
         if (paths == null || paths.isEmpty()) {
             return features;
         }
-        if (paths.size() == 1) {
+        if (paths.size() == 1) { // TODO handle multiple paths with tag or line suffixes
             String path = paths.get(0);
             int pos = path.indexOf(".feature:");
             int line;
+            String callTag;
             if (pos != -1) { // line number has been appended
                 line = Integer.valueOf(path.substring(pos + 9));
                 path = path.substring(0, pos + 8);
             } else {
                 line = -1;
             }
+            pos = path.indexOf('@');
+            if (pos != -1) { // call by tag
+                callTag = path.substring(pos);
+                path = path.substring(0, pos);
+            } else {
+                callTag = null;
+            }
             if (path.endsWith(".feature")) {
                 Resource resource = getResource(workingDir, path);
                 Feature feature = Feature.read(resource);
-                feature.setCallLine(line);
-                features.add(feature);
+                features.add(new FeatureCall(feature, callTag, line, scenarioName));
                 return features;
             }
         }
         Collection<Resource> resources = findResourcesByExtension(workingDir, "feature", paths);
         for (Resource resource : resources) {
-            features.add(Feature.read(resource));
+            features.add(new FeatureCall(Feature.read(resource), null, -1, scenarioName)); // TODO smart find of scenario name
         }
         return features;
     }
-
+    
     private static final ScanResult SCAN_RESULT = new ClassGraph().acceptPaths("/").scan(1);
-
+    
     public static Resource getResource(File workingDir, String path) {
         if (path.startsWith(Resource.CLASSPATH_COLON)) {
             path = removePrefix(path);
@@ -121,6 +127,7 @@ public class ResourceUtils {
             }
             return resources.get(0);
         } else {
+            path = path.replace('\\', '/'); // windows fix
             File file = new File(removePrefix(path));
             if (!file.exists()) {
                 throw new RuntimeException("not found: " + path);
@@ -129,11 +136,11 @@ public class ResourceUtils {
             return new FileResource(file, false, relativePath.toString());
         }
     }
-
+    
     public static Collection<Resource> findResourcesByExtension(File workingDir, String extension, String path) {
         return findResourcesByExtension(workingDir, extension, Collections.singletonList(path));
     }
-
+    
     public static List<Resource> findResourcesByExtension(File workingDir, String extension, List<String> paths) {
         List<Resource> results = new ArrayList();
         List<File> fileRoots = new ArrayList();
@@ -166,7 +173,7 @@ public class ResourceUtils {
         }
         return results;
     }
-
+    
     private static List<Resource> findFilesByExtension(File workingDir, String extension, List<File> files) {
         List<File> results = new ArrayList();
         for (File base : files) {
@@ -192,7 +199,7 @@ public class ResourceUtils {
                 })
                 .collect(Collectors.toList());
     }
-
+    
     public static File getFileRelativeTo(Class clazz, String path) {
         Path dirPath = getPathContaining(clazz);
         File file = new File(dirPath + File.separator + path);
@@ -206,7 +213,7 @@ public class ResourceUtils {
             throw new RuntimeException("cannot find " + path + " relative to " + clazz + ", " + e.getMessage());
         }
     }
-
+    
     public static Path getPathContaining(Class clazz) {
         String relative = toPathFromClassPathRoot(clazz);
         URL url = clazz.getClassLoader().getResource(relative);
@@ -216,12 +223,12 @@ public class ResourceUtils {
             throw new RuntimeException(e);
         }
     }
-
+    
     public static File getDirContaining(Class clazz) {
         Path path = getPathContaining(clazz);
         return path.toFile();
     }
-
+    
     public static String toPathFromClassPathRoot(Class clazz) {
         Package p = clazz.getPackage();
         String relative = "";
@@ -230,7 +237,7 @@ public class ResourceUtils {
         }
         return relative;
     }
-
+    
     protected static String removePrefix(String text) {
         if (text.startsWith(Resource.CLASSPATH_COLON) || text.startsWith(Resource.FILE_COLON)) {
             return text.substring(text.indexOf(':') + 1);
@@ -238,14 +245,14 @@ public class ResourceUtils {
             return text;
         }
     }
-
+    
     public static String getParentPath(String relativePath) {
         int pos = relativePath.lastIndexOf('/');
-        return pos == -1 ? relativePath : relativePath.substring(0, pos + 1);        
+        return pos == -1 ? "" : relativePath.substring(0, pos + 1);        
     }
     
     private static final ClassLoader CLASS_LOADER = ResourceUtils.class.getClassLoader();
-
+    
     public static InputStream classPathResourceToStream(String path) {
         return CLASS_LOADER.getResourceAsStream(path);
     }
@@ -253,7 +260,7 @@ public class ResourceUtils {
     public static String classPathResourceToString(String path) {
         return FileUtils.toString(classPathResourceToStream(path));
     }
-
+    
     public static File classPathToFile(String path) {
         URL url = CLASS_LOADER.getResource(path);
         if (url == null || !"file".equals(url.getProtocol())) {
@@ -274,33 +281,5 @@ public class ResourceUtils {
         temp = new File(path);
         return temp.exists() ? temp : null;
     }
-
-    public static Set<String> findJsFilesInDirectory(File dir) {
-        List<Resource> resources = findFilesByExtension(dir.getAbsoluteFile(), "js", Collections.singletonList(dir));
-        Set<String> set = new HashSet(resources.size());
-        for (Resource res : resources) {
-            set.add(res.getRelativePath());
-        }
-        return set;
-    }
-
-    public static Set<String> findJsFilesInClassPath(String path) {
-        String searchPath;
-        if (path.startsWith(Resource.CLASSPATH_COLON)) {
-            searchPath = path;
-            path = removePrefix(path);
-        } else {
-            searchPath = Resource.CLASSPATH_COLON + path;
-        }
-        Resource root = getResource(FileUtils.WORKING_DIR, searchPath);
-        File rootFile = root.isFile() ? root.getFile() : FileUtils.WORKING_DIR;
-        Collection<Resource> resources = findResourcesByExtension(rootFile, "js", searchPath);
-        Set<String> set = new HashSet(resources.size());
-        int pos = path.length();
-        for (Resource res : resources) {
-            set.add(res.getRelativePath().substring(pos));
-        }
-        return set;
-    }
-
+    
 }

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -568,8 +568,9 @@ public class PlaywrightDriver implements Driver {
         if (titleOrUrl == null) {
             return;
         }
-        for (String pageGuid : pageFrames.keySet()) {
-            String frameGuid = pageFrames.get(pageGuid).iterator().next();
+        for (Map.Entry<String, Set<String>> entry : pageFrames.entrySet()) {
+            String pageGuid = entry.getKey();
+            String frameGuid = entry.getValue().iterator().next();
             String title = evalFrame(frameGuid, "document.title").getResultValue();
             if (title != null && title.contains(titleOrUrl)) {
                 currentPage = pageGuid;
@@ -708,7 +709,7 @@ public class PlaywrightDriver implements Driver {
 
     @Override
     public List<Map> getCookies() {
-        return method("cookies", browserContextGuid).param("urls", Collections.EMPTY_LIST).send().getResult("cookies", List.class);
+        return method("cookies", browserContextGuid).param("urls", Collections.EMPTY_LIST).send().getResult("cookies");
     }
 
     @Override

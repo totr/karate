@@ -67,6 +67,35 @@ class ScenarioRuntimeTest {
     }
 
     @Test
+    void testDefAndMatchForArrays() {
+        run(
+                "def arr = ['a','b','c','d','e']",
+                "def arrSize = karate.sizeOf(arr)",
+                "match arr == '##[_]'",
+                "match arr == '##[_ > 0]'",
+                "match arr == '##[_>0]'",
+                "match arr == '##[_<6]'",
+                "def two = 2",
+                "def three = 3",
+                "match arr == '##[two + three]'",
+                "def two_var = 2",
+                "def one_two_three = 3",
+                "match arr == '#[two_var+ one_two_three + _ > 0]'",
+                "match arr == '#[two_var+ one_two_three ]'"
+        );
+        assertEquals(5, get("arrSize"));
+    }
+    
+    @Test
+    void testSizeOfForByteArrays() {
+        run(
+                "bytes data = 'foo'",
+                "def arrSize = karate.sizeOf(data)"
+        );
+        assertEquals(3, get("arrSize"));        
+    }
+
+    @Test
     void testConfigAndEnv() {
         System.clearProperty("karate.env");
         System.clearProperty("karate.config.dir");
@@ -295,6 +324,25 @@ class ScenarioRuntimeTest {
     }
 
     @Test
+    void testRemoveNotExistentPath() {
+        run(
+                "def foo = { a: 1 }",
+                "remove foo.b"
+        );
+        matchVar("foo", "{ a: 1 }");
+    }
+
+    @Test
+    void testDelete() {
+        run(
+                "def foo = { a: 1 }",
+                "delete foo.b",
+                "delete foo.a"
+        );
+        matchVar("foo", "{}");
+    }
+
+    @Test
     void testCollections() {
         run(
                 "def foo = { a: 1, b: 2, c: 3 }",
@@ -311,14 +359,45 @@ class ScenarioRuntimeTest {
     }
 
     @Test
+    void testCollectionsInFunctions() {
+        run(
+                "def foo = { a: 1, b: 2, c: 3 }",
+                "def fun1 = function(arg){ return karate.sizeOf(arg) }",
+                "def res1 = fun1(foo)",
+                "def fun2 = function(arg){ return karate.keysOf(arg) }",
+                "def res2 = fun2(foo)",
+                "def fun3 = function(arg){ return karate.valuesOf(arg) }",
+                "def res3 = fun3(foo)",
+                "def fun4 = function(arg){ return karate.filterKeys(arg, 'a')}",
+                "def res4 = fun4(foo)",
+                "def fun5 = function(arg){ return karate.filterKeys(arg, 'a', 'b')}",
+                "def res5 = fun5(foo)",
+                "def fun6 = function(arg){ return karate.filterKeys(arg, ['a', 'b'])}",
+                "def res6 = fun6(foo)",
+                "def fun7 = function(arg){ return Object.keys(arg) }",
+                "def res7 = fun7(foo)"
+        );
+        matchVar("res1", 3);
+        matchVar("res2", "['a', 'b', 'c']");
+        matchVar("res3", "[1, 2, 3]");
+        matchVar("res4", "{ a: 1 }");
+        matchVar("res5", "{ a: 1, b: 2 }");
+        matchVar("res6", "{ a: 1, b: 2 }");
+        matchVar("res7", "['a', 'b', 'c']");
+    }
+
+    @Test
     void testMatch() {
         run(
                 "def foo = { a: 1 }",
                 "def mat1 = karate.match(foo, {a: 2})",
-                "def mat2 = karate.match('foo == { a: 1 }')"
+                "def mat2 = karate.match('foo == { a: 1 }')",
+                "def bar = []",
+                "def mat3 = karate.match(bar, [])"
         );
         matchVar("mat1", "{ pass: false, message: '#notnull' }");
         matchVar("mat2", "{ pass: true, message: '#null' }");
+        matchVar("mat3", "{ pass: true, message: '#null' }");
     }
 
     @Test
@@ -427,9 +506,12 @@ class ScenarioRuntimeTest {
     void testJsonPath() {
         run(
                 "def foo = { a: 1, b: { a: 2 } }",
-                "def res1 = karate.jsonPath(foo, '$..a')"
+                "def res1 = karate.jsonPath(foo, '$..a')",
+                "def arr = [ {'id': 1, 'name': 'test', 'age': 10}, {'id': 2, 'name': 'test2', 'age': 20} ]",
+                "def res2 = karate.jsonPath(arr, '$.[?(@.id == 1)].name')[0]"
         );
         matchVar("res1", "[1, 2]");
+        matchVar("res2", "test");
     }
 
     @Test
@@ -512,16 +594,6 @@ class ScenarioRuntimeTest {
         );
         // fixed for windows
         match(((String) get("res")).replaceAll("[\r\n]+", "@"), "a,b@1,2@3,4@");
-    }
-
-    @Test
-    void testTrim() {
-        run(
-                "def text = ' \\tblah\\n'",
-                "def foo = karate.trim(text)",
-                "match foo == 'blah'"
-        );
-        matchVar("foo", "blah");
     }
 
     @Test
@@ -662,12 +734,19 @@ class ScenarioRuntimeTest {
     }
 
     @Test
+    void testArrayOnLhs() {
+        run(
+                "match [] == '#[]'"
+        );
+    }
+
+    @Test
     void testMatchContainsArrayOnLhs() {
         run(
                 "match ['foo', 'bar'] contains 'foo'"
         );
     }
-    
+
     @Test
     void testMatchEmbeddedOptionalObject() {
         run(
@@ -690,10 +769,46 @@ class ScenarioRuntimeTest {
     }
 
     @Test
+    void testMatchSchemaArray() {
+        run(
+                "def temp = { foo: '#string' }",
+                "def schema = '#[] temp'",
+                "match [{ foo: 'bar' }] == schema",
+                "configure matchEachEmptyAllowed = true",
+                "match [] == schema"
+        );
+    }
+
+    @Test
     void testMatchSchemaMagicVariables() {
         run(
                 "def response = { odds: [1, 2], count: 2 }",
                 "match response == { odds: '#[$.count]', count: '#number' }"
+        );
+    }
+
+    @Test
+    void testMatchSchemaContainsDeep() {
+        run(
+                "def array = [ 'a', 'b' ]",
+                "def response = { foo: [ 'a', 'b' ] } ",
+                "match response contains deep { foo: '#(^array)' }"
+        );
+    }
+
+    @Test
+    void testMatchContainsOnlyDeep() {
+        run(
+                "def response = { foo: [ 'a', 'b' ] } ",
+                "match response contains only deep { foo: [ 'b', 'a' ] }"
+        );
+    }
+
+    @Test
+    void testMatchEachContainsDeep() {
+        run(
+                "def response = [ { a: 1, arr: [ { b: 2, c: 3 }, { b: 4, c: 5 } ] } ]",
+                "match each response contains deep { a: 1, arr: [ { b: '#number', c: 3 } ] }"
         );
     }
 
@@ -779,13 +894,15 @@ class ScenarioRuntimeTest {
                 "def fun1 = x => x.num",
                 "def res1 = karate.sort(list1, fun1)",
                 "match res1 == [{ num: 1 }, { num: 2 }, { num: 3 }]",
-                "def list2 = [{ val: 'C' }, { val: 'A' }, { val: 'B' }]",
+                "def list2 = [{ val: 'C' }, { val: 'B' }, { val: 'A' }, { val: 'B' }]",
                 "def res2 = karate.sort(list2, x => x.val)",
-                "match res2 == [{ val: 'A' }, { val: 'B' }, { val: 'C' }]",
+                "match res2 == [{ val: 'A' }, { val: 'B' }, { val: 'B' }, { val: 'C' }]",
                 "def list3 = ['c', 'b', 'a']",
                 "def res3 = karate.sort(list3)",
                 "match res3 == ['a', 'b', 'c']",
-                "match res3.reverse() == ['c', 'b', 'a']"
+                "match res3.reverse() == ['c', 'b', 'a']",
+                "def list4 = ['a', 'a a', 'a']",
+                "match karate.sort(list4) == ['a', 'a', 'a a']"
         );
     }
 
@@ -829,7 +946,7 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure() {
+    void testContinueOnStepFailure() {
         fail = true;
         run(
                 "def var = 'foo'",
@@ -849,7 +966,7 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure2() {
+    void testContinueOnStepFailure2() {
         fail = true;
         run(
                 "def var = 'foo'",
@@ -867,7 +984,7 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure3() {
+    void testContinueOnStepFailure3() {
         fail = true;
         // bad idea to continue/ignore anything else other than match but ...
         run(
@@ -887,7 +1004,7 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure4() {
+    void testContinueOnStepFailure4() {
         fail = true;
         run(
                 "def var = 'foo'",
@@ -903,7 +1020,7 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure5() {
+    void testContinueOnStepFailure5() {
         fail = true;
         run(
                 "def var = 'foo'",
@@ -930,10 +1047,8 @@ class ScenarioRuntimeTest {
     }
 
     @Test
-    void testcontinueOnStepFailure6() {
+    void testContinueOnStepFailure6() {
         fail = true;
-        // "continuing" on javascript line errors is not supported
-        // note the if without space after evalutes line as JS
         run(
                 "def var = 'foo'",
                 "configure continueOnStepFailure = { enabled: true, continueAfter: true, keywords: ['match', 'eval', 'if'] }",
@@ -943,12 +1058,44 @@ class ScenarioRuntimeTest {
                 "match var == 'foo'",
                 "configure continueOnStepFailure = false",
                 "match var == 'foo'",
-                "match var == 'bar2'",
                 "match var == 'foo'"
         );
         // the last failed step will be show as the result failed step
-        // TODO: verify how this will look in the reports
-        assertEquals("if(true == true) { syntax error within JS line }", sr.result.getFailedStep().getStep().getText());
+        assertEquals("match var == 'crawl'", sr.result.getFailedStep().getStep().getText());
     }
 
+    @Test
+    void testContinueOnStepFailure7() {
+        // issue #1913
+        fail = true;
+        run(
+                "def var = 'foo'",
+                "configure continueOnStepFailure = { enabled: true, continueAfter: true, keywords: [ 'eval' ] }",
+                "waitFor('#error').click()",
+                "match var == 'foo'",
+                "configure continueOnStepFailure = { enabled: false }",
+                "match var == 'foo'"
+        );
+        assertEquals("waitFor('#error').click()", sr.result.getFailedStep().getStep().getText());
+    }
+
+    @Test
+    void testContinueOnStepFailure8() {
+        // issue #1913
+        // side issue found - dsl keywords with multi line was not supported
+        fail = true;
+        run(
+                "def var = 'foo'",
+                "configure continueOnStepFailure = { enabled: true, continueAfter: true, keywords: [ 'eval' ] }",
+                "match var == 'foo'",
+                "eval",
+                "\"\"\"",
+                "if(true == true) { syntax error within JS line }",
+                "\"\"\"",
+                "match var == 'foo'",
+                "configure continueOnStepFailure = { enabled: false }",
+                "match var == 'foo'"
+        );
+        assertEquals("eval", sr.result.getFailedStep().getStep().getText());
+    }
 }

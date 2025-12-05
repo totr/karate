@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
  */
 package com.intuit.karate.core;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -33,7 +34,7 @@ public class ScenarioCall {
 
     public final ScenarioRuntime parentRuntime;
     public final int depth;
-    public final Feature feature;
+    public final FeatureCall featureCall;
     public final Variable arg;
 
     private boolean callonce;
@@ -41,6 +42,33 @@ public class ScenarioCall {
     private boolean sharedScope;
     private boolean karateConfigDisabled;
     private int loopIndex = -1;
+    
+    public Map<String, Variable> getParentVars(boolean shallowCopy) {
+        if (parentRuntime == null) {
+            return new HashMap();
+        }
+        ScenarioEngine mockEngine = parentRuntime.featureRuntime.getMockEngine();
+        if (mockEngine != null) {
+            if (shallowCopy) {
+                return mockEngine.shallowCloneVariables();
+            } else {
+                return mockEngine.vars;
+            }
+        }
+        if (shallowCopy) {
+            return parentRuntime.engine.shallowCloneVariables();
+        } else {
+            return parentRuntime.engine.vars;
+        }
+    }
+    
+    public Config getParentConfig(boolean copy) {
+        if (parentRuntime == null) {
+            return new Config();
+        }
+        Config temp = parentRuntime.engine.getConfig();
+        return copy ? new Config(temp) : temp;
+    }
 
     public boolean isNone() {
         return depth == 0;
@@ -76,15 +104,15 @@ public class ScenarioCall {
 
     public boolean isKarateConfigDisabled() {
         return karateConfigDisabled;
-    }
+    }     
 
     public static ScenarioCall none(Map<String, Object> arg) {
         return new ScenarioCall(null, null, arg == null ? null : new Variable(arg));
     }
 
-    public ScenarioCall(ScenarioRuntime parentRuntime, Feature feature, Variable arg) {
+    public ScenarioCall(ScenarioRuntime parentRuntime, FeatureCall featureCall, Variable arg) {
         this.parentRuntime = parentRuntime;
-        this.feature = feature;
+        this.featureCall = featureCall;
         if (parentRuntime == null) {
             depth = 0;
         } else {

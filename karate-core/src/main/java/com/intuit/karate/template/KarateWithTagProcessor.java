@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2021 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -57,7 +57,7 @@ public class KarateWithTagProcessor extends AbstractAttributeTagProcessor {
             final IProcessableElementTag tag,
             final AttributeName attributeName, String av,
             final IElementTagStructureHandler structureHandler) {
-        JsValue jv = KarateEngineContext.get().evalLocal("({" + av + "})", true);
+        JsValue jv = KarateEngineContext.get().evalLocalAsObject(av);
         if (!jv.isObject()) {
             logger.warn("value did not evaluate to json: {}", av);
             return;

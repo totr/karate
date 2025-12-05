@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,9 @@ import com.intuit.karate.KarateException;
 import com.intuit.karate.StringUtils;
 import java.io.File;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +38,7 @@ import java.util.function.Function;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Value;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +51,7 @@ public class JsEngine {
     private static final Logger logger = LoggerFactory.getLogger(JsEngine.class);
 
     private static final String JS = "js";
-    private static final String JS_EXPERIMENTAL_FOP = "js.experimental-foreign-object-prototype";
+    private static final String JS_FOREIGN_OBJECT_PROTOTYPE = "js.foreign-object-prototype";
     private static final String JS_NASHORN_COMPAT = "js.nashorn-compat";
     private static final String JS_ECMASCRIPT_VERSION = "js.ecmascript-version";
     private static final String ENGINE_WARN_INTERPRETER_ONLY = "engine.WarnInterpreterOnly";
@@ -66,7 +69,7 @@ public class JsEngine {
     private static Context createContext(Engine engine) {
         if (engine == null) {
             engine = Engine.newBuilder()
-                    .option(ENGINE_WARN_INTERPRETER_ONLY, FALSE)                    
+                    .option(ENGINE_WARN_INTERPRETER_ONLY, FALSE)
                     .build();
         }
         return Context.newBuilder(JS)
@@ -74,7 +77,7 @@ public class JsEngine {
                 .allowAllAccess(true)
                 .option(JS_NASHORN_COMPAT, TRUE)
                 .option(JS_ECMASCRIPT_VERSION, V_2021)
-                .option(JS_EXPERIMENTAL_FOP, TRUE)
+                .option(JS_FOREIGN_OBJECT_PROTOTYPE, TRUE)
                 .engine(engine).build();
     }
 
@@ -115,14 +118,39 @@ public class JsEngine {
             Value v = bindings.getMember(key);
             if (v.isHostObject()) {
                 temp.bindings.putMember(key, v);
-            } else if (v.canExecute()) {
-                Value fun = temp.evalForValue("(" + v.getSourceLocation().getCharacters() + ")");
-                temp.bindings.putMember(key, fun);
             } else {
                 temp.bindings.putMember(key, JsValue.toJava(v));
             }
         }
         return temp;
+    }
+
+    public Value attach(Value value) {
+        try {
+            return context.asValue(value);
+        } catch (Exception e) {
+            logger.trace("context switch: {}", e.getMessage());
+            CharSequence source = value.getSourceLocation().getCharacters();
+            return evalForValue("(" + source + ")");
+        }
+    }
+
+    public Object attachAll(Object o) {
+        if (o instanceof List) {
+            List list = (List) o;
+            List result = new ArrayList(list.size());
+            list.forEach(v -> result.add(attachAll(v)));
+            return result;
+        } else if (o instanceof Map) {
+            Map map = (Map) o;
+            Map result = new LinkedHashMap(map.size());
+            map.forEach((k, v) -> result.put(k, attachAll(v)));
+            return result;
+        } else if (o instanceof Value) {
+            return attach((Value) o);
+        } else {
+            return o;
+        }
     }
 
     public JsValue eval(InputStream is) {
@@ -154,23 +182,18 @@ public class JsEngine {
     }
 
     public JsValue get(String key) {
-        Value value = bindings.getMember(key);
-        return new JsValue(value);
-    }
-
-    public Value attachSource(CharSequence source) {
-        Value value = evalForValue("(" + source + ")");
-        return attach(value);
-    }
-
-    public Value attach(Value function) {
-        try {
-            return context.asValue(function);
-        } catch (Exception e) {
-            logger.trace("context switch: {}", e.getMessage());
-            CharSequence source = function.getSourceLocation().getCharacters();
-            return evalForValue("(" + source + ")");
+        if (bindings.hasMember(key)) {
+            return new JsValue(bindings.getMember(key));
         }
+        throw new RuntimeException("no such variable: " + key);
+    }
+
+    public static Object execute(ProxyExecutable function, Object... args) {
+        Value[] values = new Value[args.length];
+        for (int i = 0; i < args.length; i++) {
+            values[i] = Value.asValue(args[i]);
+        }
+        return function.execute(values);
     }
 
     public static Value execute(Value function, Object... args) {
@@ -190,10 +213,10 @@ public class JsEngine {
 
     public Value evalWith(Set<String> names, Function<String, Object> getVariable, String src, boolean returnValue) {
         StringBuilder sb = new StringBuilder();
-        sb.append("(function(x){ ");
+        sb.append("(function($){ ");
         Map<String, Object> arg = new HashMap(names.size());
         for (String name : names) {
-            sb.append("let ").append(name).append(" = x.").append(name).append("; ");
+            sb.append("let ").append(name).append(" = $.").append(name).append("; ");
             arg.put(name, getVariable.apply(name));
         }
         if (returnValue) {

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2017 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -72,9 +72,6 @@ public class XmlUtils {
     }
 
     public static String toString(Node node, boolean pretty) {
-        if (pretty) {
-            trimWhiteSpace(node);
-        }
         DOMSource domSource = new DOMSource(node);
         StringWriter writer = new StringWriter();
         StreamResult result = new StreamResult(writer);
@@ -95,18 +92,6 @@ public class XmlUtils {
         }
     }
 
-    public static void trimWhiteSpace(Node node) {
-        NodeList children = node.getChildNodes();
-        int count = children.getLength();
-        for (int i = 0; i < count; ++i) {
-            Node child = children.item(i);
-            if (child.getNodeType() == Node.TEXT_NODE) {
-                child.setTextContent(child.getTextContent() == null ? "" : child.getTextContent().trim());
-            }
-            trimWhiteSpace(child);
-        }
-    }
-
     private static class DtdEntityResolver implements EntityResolver {
 
         protected boolean dtdPresent;
@@ -118,9 +103,15 @@ public class XmlUtils {
         }
 
     }
-
+    
     public static Document toXmlDoc(String xml) {
+        return toXmlDoc(xml, false);
+    }
+
+    public static Document toXmlDoc(String xml, boolean namespaceAware) {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(namespaceAware);
+        factory.setIgnoringElementContentWhitespace(false);
         try {
             DocumentBuilder builder = factory.newDocumentBuilder();
             DtdEntityResolver dtdEntityResolver = new DtdEntityResolver();
@@ -130,7 +121,7 @@ public class XmlUtils {
             if (dtdEntityResolver.dtdPresent) { // DOCTYPE present
                 // the XML was not parsed, but I think it hangs at the root as a text node
                 // so conversion to string and back has the effect of discarding the DOCTYPE !
-                return toXmlDoc(toString(doc, false));
+                return toXmlDoc(toString(doc, false), namespaceAware);
             } else {
                 return doc;
             }
@@ -304,7 +295,9 @@ public class XmlUtils {
     private static Object getElementAsObject(Node node, boolean removeNamespace) {
         int childElementCount = getChildElementCount(node);
         if (childElementCount == 0) {
-            return StringUtils.trimToNull(node.getTextContent());
+            String textContent = node.getTextContent();
+            return StringUtils.isBlank(textContent) ? null:
+                textContent;
         }
         Map<String, Object> map = new LinkedHashMap<>(childElementCount);
         NodeList nodes = node.getChildNodes();
@@ -461,12 +454,12 @@ public class XmlUtils {
         return doc;
     }
 
-    public static Document toXmlDoc(Object o) {
+    public static Document fromJavaObject(Object o) {
         return fromObject("root", Json.of(o).value()); // keep it simple for people to write generic xpath starting with /root
     }
 
     public static String toXml(Object o) {
-        return toString(toXmlDoc(o));
+        return toString(fromJavaObject(o));
     }
 
     public static boolean isXml(String s) {

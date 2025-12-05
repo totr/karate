@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -34,9 +34,11 @@ import org.w3c.dom.Node;
  */
 public enum ResourceType {
 
+    DEFERRED_JS("text/javascript", vals("javascript"), vals("js")),
     JS("text/javascript", vals("javascript"), vals("js")),
     JSON("application/json", vals("json"), vals("json")),
     CSS("text/css", vals("css"), vals("css")),
+    MAP("application/json", vals(), vals("map")),
     ICO("image/x-icon", vals("x-icon"), vals("ico")),
     PNG("image/png", vals("png"), vals("png")),
     GIF("image/gif", vals("gif"), vals("gif")),
@@ -47,16 +49,17 @@ public enum ResourceType {
     HTML("text/html", vals("html"), vals("html", "htm")),
     XML("application/xml", vals("xml"), vals("xml")),
     TEXT("text/plain", vals("plain"), vals("txt")),
-    MULTIPART("multipart/form-data", vals("multipart"), vals()),
+    WOFF2("application/font-woff2", vals("woff2"), vals("woff2")),
+    MULTIPART("multipart/form-data", vals("multipart"), vals()),    
     URLENCODED("application/x-www-form-urlencoded", vals("urlencoded"), vals()),
     BINARY("application/octet-stream", vals("octet"), vals()),
-    RDFXML("application/rdf+xml", vals("xml", "rdf"), vals(".rdf")),
-    NTRIPLES("application/n-triples", vals("rdf"), vals(".nt")),
-    TURTLE("text/turtle", vals("rdf"), vals(".ttl")),
-    NQUADS("application/n-quads", vals("rdf"), vals(".nq")),
-    TRIG("application/trig", vals("rdf"), vals(".trig")),
-    N3("text/n3", vals("rdf"), vals(".n3")),
-    JSONLD("application/ld+json", vals("json", "rdf"), vals(".jsonld"));
+    RDFXML("application/rdf+xml", vals("rdf", "rdf+xml"), vals("rdf")),
+    NTRIPLES("application/n-triples", vals("triples"), vals("nt")),
+    TURTLE("text/turtle", vals("turtle"), vals("ttl")),
+    NQUADS("application/n-quads", vals("quads"), vals("nq")),
+    TRIG("application/trig", vals("trig"), vals("trig")),
+    N3("text/n3", vals("n3"), vals("n3")),
+    JSONLD("application/ld+json", vals("ld+json"), vals("jsonld"));
 
     private static String[] vals(String... values) {
         return values;
@@ -91,8 +94,7 @@ public enum ResourceType {
             return null;
         }
         String extension = path.substring(pos + 1).trim().toLowerCase();
-        ResourceType rt = EXTENSION_MAP.get(extension);
-        return rt == null ? null : rt;
+        return EXTENSION_MAP.get(extension);
     }
 
     public String getExtension() {
@@ -120,7 +122,7 @@ public enum ResourceType {
                 return false;
         }
     }
-    
+
     public boolean isUrlEncodedOrMultipart() {
         switch (this) {
             case URLENCODED:
@@ -128,7 +130,7 @@ public enum ResourceType {
                 return true;
             default:
                 return false;
-        }        
+        }
     }
 
     public boolean isHtml() {
@@ -168,6 +170,16 @@ public enum ResourceType {
             case JPG:
             case PDF:
             case MP4:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public boolean isScript() {
+        switch (this){
+            case JS:
+            case DEFERRED_JS:
                 return true;
             default:
                 return false;

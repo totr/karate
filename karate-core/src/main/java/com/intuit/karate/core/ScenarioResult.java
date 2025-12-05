@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ package com.intuit.karate.core;
 import com.intuit.karate.report.ReportUtils;
 import com.intuit.karate.StringUtils;
 import java.io.File;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -38,7 +39,7 @@ import java.util.Map;
  */
 public class ScenarioResult implements Comparable<ScenarioResult> {
 
-    private final List<StepResult> stepResults = new ArrayList();
+    private final List<StepResult> stepResults = new ArrayList<>();
     private final Scenario scenario;
 
     private StepResult failedStep;
@@ -60,11 +61,24 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
         return scenario.getExampleIndex() - sr.scenario.getExampleIndex();
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        return compareTo((ScenarioResult)obj) == 0;
+    }
+
     public String getFailureMessageForDisplay() {
         if (failedStep == null) {
             return null;
-        }
-        // val message = feature + ":" + step.getLine + " " + result.getStep.getText
+        }        
         Step step = failedStep.getStep();
         String featureName = scenario.getFeature().getResource().getRelativePath();
         return featureName + ":" + step.getLine() + " " + step.getText();
@@ -75,10 +89,10 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
         step.setLine(scenario.getLine());
         step.setPrefix("*");
         step.setText(message);
-        Result result = error == null ? Result.passed(0) : Result.failed(0, error, step);
+        Result result = error == null ? Result.passed(System.currentTimeMillis(), 0) : Result.failed(System.currentTimeMillis(), 0, error, step);
         StepResult sr = new StepResult(step, result);
         if (error != null) {
-            sr.setStepLog(error.getMessage() + "\n" + StringUtils.throwableToString(error));
+            sr.setStepLog(error.getMessage());
         }
         addStepResult(sr);
         return sr;
@@ -106,8 +120,8 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
                 call.setLine(stepResult.getStep().getLine());
                 call.setPrefix(StringUtils.repeat('>', depth));
                 call.setText(fr.getCallNameForReport());
-                call.setDocString(fr.getCallArgPretty());
-                StepResult callResult = new StepResult(call, Result.passed(0));
+                // call.setDocString(fr.getCallArgPretty());                
+                StepResult callResult = new StepResult(call, Result.passed(stepResult.getResult().getStartTime(), 0));
                 callResult.setHidden(stepResult.isHidden());
                 list.add(callResult.toCucumberJson());
                 for (StepResult sr : fr.getAllScenarioStepResultsNotHidden()) {
@@ -175,6 +189,13 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
             }
             scenario.setSteps(steps);
         }
+        
+		if (scenario.getTagsEffective().contains(Tag.FAIL) && sr.isFailed()) {
+			if (!sr.getErrorMessage().startsWith(ScenarioRuntime.EXPECT_TEST_TO_FAIL_BECAUSE_OF_FAIL_TAG)) {
+				sr.ignoreFailedStep();
+			}
+
+		}
         return sr;
     }
 
@@ -213,6 +234,27 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
         return map;
     }
 
+    // Paired down information for use in karate.scenarioOutline
+    public Map<String, Object> toInfoJson() {
+        Map<String, Object> map = new HashMap();
+        map.put("durationMillis", getDurationMillis());
+        List<String> tags = scenario.getTagsEffective().getTags();
+        if (tags != null && !tags.isEmpty()) {
+            map.put("tags", tags);
+        }
+        map.put("failed", isFailed());
+        map.put("refId", scenario.getRefId());
+        map.put("sectionIndex", scenario.getSection().getIndex());
+        map.put("exampleIndex", scenario.getExampleIndex());
+        map.put("name", scenario.getName());
+        map.put("description", scenario.getDescription());
+        map.put("line", scenario.getLine());
+        map.put("executorName", executorName);
+        map.put("startTime", startTime);
+        map.put("endTime", endTime);
+        return map;
+    }
+
     public Map<String, Object> toCucumberJson() {
         Map<String, Object> map = new HashMap();
         map.put("name", scenario.getName());
@@ -223,6 +265,7 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
         map.put("type", "scenario");
         map.put("keyword", scenario.isOutlineExample() ? "Scenario Outline" : "Scenario");
         map.put("tags", tagsToCucumberJson(scenario.getTagsEffective().getOriginal()));
+        map.put("start_timestamp", Instant.ofEpochMilli(startTime).toString());
         return map;
     }
 
@@ -327,4 +370,7 @@ public class ScenarioResult implements Comparable<ScenarioResult> {
         return failedStep == null ? scenario.toString() : failedStep + "";
     }
 
+    public void ignoreFailedStep() {
+        failedStep = null;
+    }
 }

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@ import com.intuit.karate.FileUtils;
 import com.intuit.karate.Logger;
 import com.intuit.karate.core.Config;
 import com.intuit.karate.core.ScenarioEngine;
+import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,9 +42,11 @@ import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.net.ssl.SSLContext;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -52,10 +55,12 @@ import org.apache.http.HttpHost;
 import org.apache.http.HttpMessage;
 import org.apache.http.HttpRequestInterceptor;
 import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.NTCredentials;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.config.AuthSchemes;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.entity.EntityBuilder;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -64,7 +69,7 @@ import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
 import org.apache.http.config.SocketConfig;
-import org.apache.http.conn.ssl.LenientSslConnectionSocketFactory;
+import nodebug.io.karatelabs.LenientSslConnectionSocketFactory;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustAllStrategy;
@@ -83,6 +88,7 @@ import org.apache.http.impl.cookie.DefaultCookieSpec;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.ssl.SSLContexts;
+import org.brotli.dec.BrotliInputStream;
 
 /**
  *
@@ -98,7 +104,7 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
     private CookieStore cookieStore;
 
     public static class LenientCookieSpec extends DefaultCookieSpec {
-        
+
         static final String KARATE = "karate";
 
         public LenientCookieSpec() {
@@ -132,7 +138,12 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
 
     private void configure(Config config) {
         clientBuilder = HttpClientBuilder.create();
-        clientBuilder.disableAutomaticRetries();
+        if (config.isHttpRetryEnabled()) {
+            clientBuilder.setRetryHandler(new CustomHttpRequestRetryHandler(logger));
+        } else {
+            clientBuilder.disableAutomaticRetries();
+        }
+
         if (!config.isFollowRedirects()) {
             clientBuilder.disableRedirectHandling();
         } else { // support redirect on POST by default
@@ -188,6 +199,16 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
             } catch (Exception e) {
                 logger.warn("failed to resolve local address: {} - {}", config.getLocalAddress(), e.getMessage());
             }
+        }
+        if (config.isNtlmEnabled()) {
+            List<String> authSchemes = new ArrayList<>();
+            authSchemes.add(AuthSchemes.NTLM);
+            CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+            NTCredentials ntCredentials = new NTCredentials(
+                config.getNtlmUsername(), config.getNtlmPassword(), config.getNtlmWorkstation(), config.getNtlmDomain());
+            credentialsProvider.setCredentials(AuthScope.ANY, ntCredentials);
+            clientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+            configBuilder.setTargetPreferredAuthSchemes(authSchemes);
         }
         clientBuilder.setDefaultRequestConfig(configBuilder.build());
         SocketConfig.Builder socketBuilder = SocketConfig.custom().setSoTimeout(config.getConnectTimeout());
@@ -265,20 +286,27 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
         }
         if (request.getHeaders() != null) {
             request.getHeaders().forEach((k, vals) -> vals.forEach(v -> requestBuilder.addHeader(k, v)));
-        }
-        CloseableHttpClient client = clientBuilder.build();
+        }        
         CloseableHttpResponse httpResponse;
         byte[] bytes;
-        try {
+        try (CloseableHttpClient client = clientBuilder.build()) {
             httpResponse = client.execute(requestBuilder.build());
             HttpEntity responseEntity = httpResponse.getEntity();
             if (responseEntity == null || responseEntity.getContent() == null) {
                 bytes = Constants.ZERO_BYTES;
             } else {
                 InputStream is = responseEntity.getContent();
+                Header contentEncoding = httpResponse.getFirstHeader(HttpConstants.HDR_CONTENT_ENCODING);
+                if (contentEncoding != null) {
+                    String encoding = contentEncoding.getValue();
+                    if ("br".equalsIgnoreCase(encoding)) {
+                        is = new BrotliInputStream(is);
+                    }
+                }
                 bytes = FileUtils.toBytes(is);
             }
-            request.setEndTimeMillis(System.currentTimeMillis());
+            request.setEndTime(System.currentTimeMillis());
+            httpResponse.close();
         } catch (Exception e) {
             if (e instanceof ClientProtocolException && e.getCause() != null) { // better error message                
                 throw new RuntimeException(e.getCause());
@@ -286,15 +314,30 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
                 throw new RuntimeException(e);
             }
         }
-        Map<String, List<String>> headers;
-        List<Cookie> cookies = cookieStore.getCookies();
-        if (!cookies.isEmpty()) {
-            // TODO improve - this is only for the edge case where the apache client
-            // auto-followed a redirect where cookies were involved
-            List<String> cookieValues = new ArrayList(cookies.size());
-            for (Cookie c : cookieStore.getCookies()) {
+        int statusCode = httpResponse.getStatusLine().getStatusCode();
+        Map<String, List<String>> headers = toHeaders(httpResponse);
+        List<Cookie> storedCookies = cookieStore.getCookies();
+        Header[] requestCookieHeaders = httpResponse.getHeaders(HttpConstants.HDR_SET_COOKIE);
+        // edge case where the apache client
+        // auto-followed a redirect where cookies were involved
+        List<String> mergedCookieValues = new ArrayList(requestCookieHeaders.length);
+        Set<String> alreadyMerged = new HashSet(requestCookieHeaders.length);
+        for (Header ch : requestCookieHeaders) {
+            String requestCookieValue = ch.getValue();
+            io.netty.handler.codec.http.cookie.Cookie c = ClientCookieDecoder.LAX.decode(requestCookieValue);
+            if (c != null) {
+                mergedCookieValues.add(requestCookieValue);
+                alreadyMerged.add(c.name());
+            }
+        }        
+        for (Cookie c : storedCookies) {
+            if (c.getValue() != null) {
+                String name = c.getName();
+                if (alreadyMerged.contains(name)) {
+                    continue;
+                }                
                 Map<String, Object> map = new HashMap();
-                map.put(Cookies.NAME, c.getName());
+                map.put(Cookies.NAME, name);
                 map.put(Cookies.VALUE, c.getValue());
                 map.put(Cookies.DOMAIN, c.getDomain());
                 if (c.getExpiryDate() != null) {
@@ -303,17 +346,12 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
                 map.put(Cookies.SECURE, c.isSecure());
                 io.netty.handler.codec.http.cookie.Cookie nettyCookie = Cookies.fromMap(map);
                 String cookieValue = ServerCookieEncoder.LAX.encode(nettyCookie);
-                cookieValues.add(cookieValue);
+                mergedCookieValues.add(cookieValue);
             }
-            // removing is probably not needed since apache cookie handling is enabled, but anyway
-            httpResponse.removeHeaders(HttpConstants.HDR_SET_COOKIE);
-            headers = toHeaders(httpResponse);
-            headers.put(HttpConstants.HDR_SET_COOKIE, cookieValues);
-            cookieStore.clear();
-        } else {
-            headers = toHeaders(httpResponse);            
         }
-        Response response = new Response(httpResponse.getStatusLine().getStatusCode(), headers, bytes);
+        headers.put(HttpConstants.HDR_SET_COOKIE, mergedCookieValues);
+        cookieStore.clear();
+        Response response = new Response(statusCode, headers, bytes);
         httpLogger.logResponse(getConfig(), request, response);
         return response;
     }
@@ -322,7 +360,7 @@ public class ApacheHttpClient implements HttpClient, HttpRequestInterceptor {
     public void process(org.apache.http.HttpRequest hr, HttpContext hc) throws HttpException, IOException {
         request.setHeaders(toHeaders(hr));
         httpLogger.logRequest(getConfig(), request);
-        request.setStartTimeMillis(System.currentTimeMillis());
+        request.setStartTime(System.currentTimeMillis());
     }
 
     private static Map<String, List<String>> toHeaders(HttpMessage msg) {

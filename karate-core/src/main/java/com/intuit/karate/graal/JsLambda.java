@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2021 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,37 +26,30 @@ package com.intuit.karate.graal;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.graalvm.polyglot.Value;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  *
  * @author pthomas3
  */
-public class JsLambda implements Consumer, Function, Runnable {
+public class JsLambda extends JsFunction.Instantiable implements Consumer, Function, Runnable {    
 
-    private static final Logger logger = LoggerFactory.getLogger(JsLambda.class);
-
-    public final Value value;
-
-    public JsLambda(Value value) {
-        this.value = value;
+    public JsLambda(Value v) {
+        super(v);
     }
 
     @Override
     public void accept(Object arg) {
-        JsExecutable.invoke(value, arg);
+        JsEngine.execute(this, arg);
     }
 
     @Override
     public Object apply(Object arg) {
-        Value res = JsExecutable.invoke(value, arg);
-        return JsValue.toJava(res);
+        return JsEngine.execute(this, arg);
     }
 
     @Override
     public void run() {
-        JsExecutable.invoke(value);
+        JsEngine.execute(this);
     }
 
 }

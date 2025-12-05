@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,7 +48,7 @@ public class KaHxValsAttrProcessor extends AbstractAttributeTagProcessor {
 
     @Override
     protected void doProcess(ITemplateContext ctx, IProcessableElementTag tag, AttributeName an, String av, IElementTagStructureHandler sh) {
-        JsValue jv = KarateEngineContext.get().evalLocal("({" + av + "})", true);
+        JsValue jv = KarateEngineContext.get().evalLocalAsObject(av);
         if (!jv.isObject()) {
             logger.warn("value did not evaluate to json: {}", av);
         } else {

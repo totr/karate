@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -126,7 +126,7 @@ public abstract class RobotBase implements Robot, Plugin {
 
     public Logger getLogger() {
         return logger;
-    }        
+    }
 
     public RobotBase(ScenarioRuntime runtime) {
         this(runtime, Collections.EMPTY_MAP);
@@ -233,7 +233,7 @@ public abstract class RobotBase implements Robot, Plugin {
     public void onFailure(StepResult stepResult) {
         if (screenshotOnFailure && !stepResult.isWithCallResults()) {
             byte[] bytes = screenshot();
-            
+
         }
     }
 
@@ -277,7 +277,7 @@ public abstract class RobotBase implements Robot, Plugin {
 
     @Override
     public Robot rightClick() {
-        return click(3);
+        return click(2);
     }
 
     @Override
@@ -299,21 +299,34 @@ public abstract class RobotBase implements Robot, Plugin {
 
     @Override
     public Robot doubleClick() {
-        click();
-        delay(40);
-        click();
+        if (highlight) {
+            getLocation().highlight(highlightDuration);
+            int toDelay = highlightDuration;
+            if (toDelay > 0) {
+                RobotUtils.delay(toDelay);
+            }
+        }
+        int clickType = mask(1);
+        robot.mousePress(clickType);
+        robot.mouseRelease(clickType);
+        RobotUtils.delay(100);
+        robot.mousePress(clickType);
+        robot.mouseRelease(clickType);
+
         return this;
     }
 
     @Override
     public Robot press() {
-        robot.mousePress(1);
+        int mask = mask(1);
+        robot.mousePress(mask);
         return this;
     }
 
     @Override
     public Robot release() {
-        robot.mouseRelease(1);
+        int mask = mask(1);
+        robot.mouseRelease(mask);
         return this;
     }
 
@@ -484,7 +497,7 @@ public abstract class RobotBase implements Robot, Plugin {
 
     protected Element waitForWindowOptional(String locator, boolean retry) {
         Element prevWindow = currentWindow;
-        Element window = window(locator, retry, false); // will update currentWindow     
+        Element window = window(locator, retry, false); // will update currentWindow
         currentWindow = prevWindow; // so we reset it
         if (window == null) {
             return new MissingElement(this);
@@ -795,7 +808,7 @@ public abstract class RobotBase implements Robot, Plugin {
     @Override
     public abstract Element getFocused();
 
-    //==========================================================================        
+    //==========================================================================
     //
     protected abstract Element windowInternal(String title);
 

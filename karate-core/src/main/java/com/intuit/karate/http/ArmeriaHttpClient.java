@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -121,7 +121,7 @@ public class ArmeriaHttpClient implements HttpClient, DecoratingHttpClientFuncti
     public HttpResponse execute(com.linecorp.armeria.client.HttpClient delegate, ClientRequestContext ctx,
             com.linecorp.armeria.common.HttpRequest req) throws Exception {
         ctx.log().whenAvailable(RequestLogProperty.REQUEST_HEADERS).thenAccept(log -> {
-            request.setStartTimeMillis(log.requestStartTimeMillis());
+            request.setStartTime(log.requestStartTimeMillis());
             RequestHeaders rh = log.requestHeaders();
             for (CharSequence name : rh.names()) {
                 if (name.charAt(0) != ':') {
@@ -130,7 +130,7 @@ public class ArmeriaHttpClient implements HttpClient, DecoratingHttpClientFuncti
             }
             httpLogger.logRequest(config, request);
         });
-        ctx.log().whenAvailable(RequestLogProperty.RESPONSE_START_TIME).thenAccept(log -> request.setEndTimeMillis(log.responseStartTimeMillis()));
+        ctx.log().whenAvailable(RequestLogProperty.RESPONSE_START_TIME).thenAccept(log -> request.setEndTime(log.responseStartTimeMillis()));
         return delegate.execute(ctx, req);
     }
 

@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,9 +27,7 @@ import com.intuit.karate.Logger;
 import com.intuit.karate.core.Config;
 import com.intuit.karate.resource.ResourceResolver;
 import com.linecorp.armeria.common.RequestContext;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -39,28 +37,28 @@ import java.util.function.Function;
 public class ServerConfig {
 
     private final ResourceResolver resourceResolver;
-    private final Set<String> jsFiles;
 
     private String hostContextPath = null;
-    private String homePagePath = "index";
+    private String homePagePath = "/index";
+    private String signinPagePath = "/signin";
+    private String signoutPagePath = "/signout";
     private String sessionCookieName = "karate.sid";
     private boolean stripContextPathFromRequest;
     private boolean useGlobalSession;
     private boolean autoCreateSession;
+    private boolean noCache;
+    private boolean devMode;
     private SessionStore sessionStore = JvmSessionStore.INSTANCE;
     private int sessionExpirySeconds = 60 * 10;
 
-    private static final Session GLOBAL_SESSION = new Session("-1", new HashMap(), -1, -1, -1);
+    public static final Session GLOBAL_SESSION = new Session("-1", new HashMap(), -1, -1, -1);
 
     private Function<Request, ServerContext> contextFactory = request -> {
         ServerContext context = new ServerContext(this, request);
-        String path = request.getPath();
-        if (path.startsWith("api/")) {
-            context.setApi(true);
+        if (context.setApiIfPathStartsWith("/api/")) {
             context.setLockNeeded(true);
-            context.setSession(GLOBAL_SESSION);
-        } else if (useGlobalSession) {
-            context.setSession(GLOBAL_SESSION);
+        } else {
+            context.setHttpGetAllowed(true);
         }
         return context;
     };
@@ -77,20 +75,14 @@ public class ServerConfig {
 
     public ServerConfig(ResourceResolver resourceResolver) {
         this.resourceResolver = resourceResolver;
-        jsFiles = Collections.emptySet();
     }
 
     public ServerConfig(String root) {
-        resourceResolver = new ResourceResolver(root);
-        jsFiles = resourceResolver.getJsFiles();
+        this(new ResourceResolver(root));
     }
 
     public ResourceResolver getResourceResolver() {
         return resourceResolver;
-    }
-
-    public Set<String> getJsFiles() {
-        return jsFiles;
     }
 
     public String getHostContextPath() {
@@ -99,6 +91,14 @@ public class ServerConfig {
 
     public String getHomePagePath() {
         return homePagePath;
+    }
+
+    public String getSigninPagePath() {
+        return signinPagePath;
+    }
+
+    public String getSignoutPagePath() {
+        return signoutPagePath;
     }
 
     public String getSessionCookieName() {
@@ -115,6 +115,14 @@ public class ServerConfig {
 
     public boolean isAutoCreateSession() {
         return autoCreateSession;
+    }
+
+    public boolean isNoCache() {
+        return noCache;
+    }
+
+    public boolean isDevMode() {
+        return devMode;
     }
 
     public int getSessionExpirySeconds() {
@@ -149,6 +157,16 @@ public class ServerConfig {
         return this;
     }
 
+    public ServerConfig signinPagePath(String value) {
+        signinPagePath = value;
+        return this;
+    }
+
+    public ServerConfig signoutPagePath(String value) {
+        signoutPagePath = value;
+        return this;
+    }
+
     public ServerConfig sessionCookieName(String value) {
         sessionCookieName = value;
         return this;
@@ -166,6 +184,16 @@ public class ServerConfig {
 
     public ServerConfig autoCreateSession(boolean value) {
         autoCreateSession = value;
+        return this;
+    }
+
+    public ServerConfig noCache(boolean value) {
+        noCache = value;
+        return this;
+    }
+
+    public ServerConfig devMode(boolean value) {
+        devMode = value;
         return this;
     }
 

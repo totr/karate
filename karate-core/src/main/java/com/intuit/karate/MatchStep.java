@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -63,7 +63,12 @@ public class MatchStep {
             not = raw.charAt(lhsEndPos + 1) == '!';
             searchPos = lhsEndPos + (not ? 10 : 9);
             String anyOrOnlyOrDeep = raw.substring(searchPos).trim();
-            if (anyOrOnlyOrDeep.startsWith("only")) {
+            if (anyOrOnlyOrDeep.startsWith("only deep")) {
+                int onlyPos = raw.indexOf(" only deep", searchPos);
+                only = true;
+                deep = true;
+                searchPos = onlyPos + 10;
+            } else if (anyOrOnlyOrDeep.startsWith("only")) {
                 int onlyPos = raw.indexOf(" only", searchPos);
                 only = true;
                 searchPos = onlyPos + 5;
@@ -97,8 +102,9 @@ public class MatchStep {
         }
         String lhs = raw.substring(0, lhsEndPos).trim();
         if (leftParenPos == -1) {
-            leftParenPos = lhs.indexOf('[');
-            if (leftParenPos == 0) { // json array
+            leftParenPos = lhs.indexOf('['); // used later to test for json-path
+            char first = lhs.charAt(0);
+            if (first == '[' || first == '{') { // json array or object
                 spacePos = -1; // just use lhs
                 lhs = "(" + lhs + ")";
             }
@@ -133,13 +139,19 @@ public class MatchStep {
                 if (any) {
                     return Match.Type.EACH_CONTAINS_ANY;
                 }
+                if (deep) {
+                    if (not) {
+                        throw new RuntimeException("'each !contains deep' is not yet supported, use 'each contains deep' instead");
+                    }
+                    return Match.Type.EACH_CONTAINS_DEEP;
+                }
                 return not ? Match.Type.EACH_NOT_CONTAINS : Match.Type.EACH_CONTAINS;
             }
             return not ? Match.Type.EACH_NOT_EQUALS : Match.Type.EACH_EQUALS;
         }
         if (contains) {
             if (only) {
-                return Match.Type.CONTAINS_ONLY;
+                return deep ? Match.Type.CONTAINS_ONLY_DEEP : Match.Type.CONTAINS_ONLY;
             }
             if (any) {
                 return Match.Type.CONTAINS_ANY;

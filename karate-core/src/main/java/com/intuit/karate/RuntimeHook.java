@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +46,10 @@ public interface RuntimeHook {
 
     }
 
+    default void afterScenarioOutline(ScenarioRuntime sr) {
+
+    }
+
     default boolean beforeFeature(FeatureRuntime fr) {
         return true;
     }
@@ -68,17 +72,6 @@ public interface RuntimeHook {
 
     default void afterStep(StepResult result, ScenarioRuntime sr) {
         
-    }
-
-    // applicable only for Dynamic Scenario Outlines which have the need
-    // to run background sections before executing the individual scenarios
-    // to calculate the Examples table
-    default void beforeBackground(ScenarioRuntime sr) {
-
-    }
-
-    default void afterBackground(ScenarioRuntime sr) {
-
     }
 
     default void beforeHttpCall(HttpRequest request, ScenarioRuntime sr) {

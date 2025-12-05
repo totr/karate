@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,8 +36,8 @@ import java.util.Map;
  */
 public class HttpRequest {
 
-    private long startTimeMillis;
-    private long endTimeMillis;
+    private long startTime;
+    private long endTime;
     private String url;
     private String method;
     private Map<String, List<String>> headers;
@@ -61,20 +61,20 @@ public class HttpRequest {
         headers.put(name, values);
     }
 
-    public long getStartTimeMillis() {
-        return startTimeMillis;
+    public long getStartTime() {
+        return startTime;
     }
 
-    public void setStartTimeMillis(long startTimeMillis) {
-        this.startTimeMillis = startTimeMillis;
+    public void setStartTime(long startTime) {
+        this.startTime = startTime;
     }
 
-    public long getEndTimeMillis() {
-        return endTimeMillis;
+    public long getEndTime() {
+        return endTime;
     }
 
-    public void setEndTimeMillis(long endTimeMillis) {
-        this.endTimeMillis = endTimeMillis;
+    public void setEndTime(long endTime) {
+        this.endTime = endTime;
     }
 
     public String getUrl() {
@@ -153,11 +153,18 @@ public class HttpRequest {
 
     public Request toRequest() {
         Request request = new Request();
+        request.setStartTime(startTime);
+        request.setEndTime(endTime);
         request.setMethod(method);
         request.setUrl(url);
         request.setHeaders(headers);
         request.setBody(body);
         return request;
     }
+
+    @Override
+    public String toString() {
+        return method + " " + url;
+    }        
 
 }

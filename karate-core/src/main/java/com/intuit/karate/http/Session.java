@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
  */
 package com.intuit.karate.http;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -37,12 +38,22 @@ public class Session {
     private long updated;
     private long expires;
 
+    public static final Session TEMPORARY = new Session(null, null, -1, -1, -1);
+
     public Session(String id, Map<String, Object> data, long created, long updated, long expires) {
         this.id = id;
         this.data = data;
         this.created = created;
         this.updated = updated;
         this.expires = expires;
+    }
+
+    public boolean isTemporary() {
+        return id == null;
+    }
+
+    public Session copy() { // TODO deep-clone ?
+        return new Session(id, new HashMap(data), created, updated, expires);
     }
 
     public void setUpdated(long updated) {

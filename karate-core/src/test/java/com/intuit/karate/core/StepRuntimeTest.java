@@ -1,6 +1,5 @@
 package com.intuit.karate.core;
 
-import cucumber.api.java.en.When;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -53,6 +52,15 @@ public class StepRuntimeTest {
         Assertions.assertEquals(new ArrayList<>(), methodMatch.args);
         Assertions.assertEquals("com.intuit.karate.ScenarioActions.getFailedReason() null", methodMatch.toString());
     }
+    @Test
+    public void testFindMethodsByKeywordNoResults() {
+        Collection<Method> defMethod = StepRuntime.findMethodsByKeyword("def");
+        Assertions.assertFalse(defMethod.isEmpty());
+
+        Collection<Method> badMethodMethod = StepRuntime.findMethodsByKeyword("badMethod");
+        Assertions.assertNotNull(badMethodMethod);
+        Assertions.assertTrue(badMethodMethod.isEmpty());
+    }
 
     @ParameterizedTest
     @MethodSource("methodPatternAndKeywords")
@@ -63,12 +71,7 @@ public class StepRuntimeTest {
         if (when != null) {
             methodRegex = when.value();
         } else {
-            Action action = scenarioActionMethod.getDeclaredAnnotation(Action.class);
-            if (action != null) {
-                methodRegex = action.value();
-            } else {
-                methodRegex = null;
-            }
+            methodRegex = null;
         }
 
         // it's ok reflection here, just for unit testing.
@@ -98,7 +101,7 @@ public class StepRuntimeTest {
                         com.intuit.karate.ScenarioActions.class.getMethod("print", String.class),
                         new ArrayList<String>() { { add("\"name:\", name"); }},
                         "print \"name:\", name"),
-                Arguments.of("com.intuit.karate.ScenarioActions.print(java.lang.String) [\"'test with\\/slash'\"]", // JSON escapes forward slash
+                Arguments.of("com.intuit.karate.ScenarioActions.print(java.lang.String) [\"'test with/slash'\"]", // JSON with forward slash
                         com.intuit.karate.ScenarioActions.class,
                         com.intuit.karate.ScenarioActions.class.getMethod("print", String.class),
                         new ArrayList<String>() { { add("'test with/slash'"); }},

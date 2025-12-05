@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -58,8 +58,6 @@ public class KaScriptElemProcessor extends AbstractElementModelProcessor {
         IProcessableElementTag tag = ctx.getElementStack().get(depth - 1);
         String scope = tag.getAttributeValue(getDialectPrefix(), SCOPE);
         int n = model.size();
-        boolean isHead = TemplateUtils.hasAncestorElement(ctx, HEAD);
-        IModel headModel = null;
         while (n-- != 0) {
             final ITemplateEvent event = model.get(n);
             if (event instanceof IText) {
@@ -71,15 +69,9 @@ public class KaScriptElemProcessor extends AbstractElementModelProcessor {
                         KarateEngineContext.get().evalGlobal(text);
                     }
                 }
-                if (isHead && headModel == null) {
-                    headModel = TemplateUtils.generateHeadScriptTag(ctx);
-                }
             }
         }
         model.reset();
-        if (headModel != null) {
-            model.addModel(headModel);
-        }
     }
 
 }

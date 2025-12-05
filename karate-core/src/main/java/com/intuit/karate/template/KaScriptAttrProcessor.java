@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -66,10 +66,11 @@ public class KaScriptAttrProcessor extends AbstractAttributeTagProcessor {
             }
             String noCache = tag.getAttributeValue(getDialectPrefix(), KaScriptElemProcessor.NOCACHE);
             if (noCache != null) {
-                Resource resource = resourceResolver.resolve(src);
-                if (resource.isFile()) {
-                    File file = resource.getFile();
-                    src = src + "?ts=" + file.lastModified();
+                try {
+                    Resource resource = resourceResolver.resolve(src);
+                    src = src + "?ts=" + resource.getLastModified();
+                } catch (Exception e) {
+                    logger.warn("nocache failed: {}", e.getMessage());
                 }
                 sh.removeAttribute(getDialectPrefix(), KaScriptElemProcessor.NOCACHE);
             }

@@ -28,7 +28,7 @@ class TemplateTest {
         JsEngine je = JsEngine.global();
         je.put("message", "hello world");
         KarateTemplateEngine engine = TemplateUtils.forStrings(je, new ResourceResolver("classpath:com/intuit/karate/template"));
-        String rendered = engine.process("<div><div th:text=\"message\"></div><div th:replace=\"root:temp.html\"></div></div>");
+        String rendered = engine.process("<div><div th:text=\"message\"></div><div th:replace=\"/temp.html\"></div></div>");
         assertEquals("<div><div>hello world</div><div>temp</div></div>", rendered);
     }
 
@@ -51,9 +51,10 @@ class TemplateTest {
 
     @Test
     void testWith() {
-        String rendered = render("with.html");
+        String rendered = render("with");
         assertTrue(rendered.contains("<div>bar</div>"));
         assertTrue(rendered.contains("<div>hello world</div>"));
+        assertTrue(rendered.contains("<div>with</div>"));
     }
 
     @Test

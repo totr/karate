@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,10 +23,7 @@
  */
 package com.intuit.karate.graal;
 
-import com.intuit.karate.FileUtils;
-import com.intuit.karate.XmlUtils;
 import com.intuit.karate.JsonUtils;
-import com.intuit.karate.http.ResourceType;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +32,7 @@ import java.util.Set;
 import java.util.function.Function;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.proxy.Proxy;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Node;
@@ -56,16 +54,28 @@ public class JsValue {
         OTHER
     }
 
+    public static final JsValue NULL = new JsValue(Value.asValue(null));
+
     private final Value original;
-    private final Object value;
+    protected final Object value;
     public final Type type;
 
     public JsValue(Value v) {
+        if (v == null) {
+            throw new RuntimeException("JsValue() constructor argument has to be not-null");
+        }
         this.original = v;
         try {
-            if (v.isNull()) { // apparently this can be a "host object" as well !
+            if (v.isNull()) {
                 value = null;
                 type = Type.NULL;
+            } else if (v.isHostObject()) {
+                if (v.isMetaObject()) { // java.lang.Class !
+                    value = v; // special case, keep around as graal value
+                } else {
+                    value = v.asHostObject();
+                }
+                type = Type.OTHER;
             } else if (v.isProxyObject()) {
                 Object o = v.asProxyObject();
                 if (o instanceof JsXml) {
@@ -77,27 +87,13 @@ public class JsValue {
                 } else if (o instanceof JsList) {
                     value = ((JsList) o).getList();
                     type = Type.ARRAY;
-                } else if (o instanceof JsExecutable) {
-                    value = (JsExecutable) o;
-                    type = Type.FUNCTION;                
+                } else if (o instanceof ProxyExecutable) {
+                    value = o;
+                    type = Type.FUNCTION;
                 } else { // e.g. custom bridge, e.g. Request
                     value = v.as(Object.class);
                     type = Type.OTHER;
                 }
-            } else if (v.isHostObject()) { // java object
-                if (v.isMetaObject()) { // java.lang.Class !
-                    value = v; // special case, keep around as graal value
-                } else {
-                    value = v.asHostObject();
-                }
-                type = Type.OTHER;
-            } else if (v.canExecute()) {
-                if (v.isMetaObject()) { // js function
-                    value = v; // special case, keep around as graal value                
-                } else { // java function reference
-                    value = new JsExecutable(v);
-                }
-                type = Type.FUNCTION;
             } else if (v.hasArrayElements()) {
                 int size = (int) v.getArraySize();
                 List list = new ArrayList(size);
@@ -108,17 +104,41 @@ public class JsValue {
                 value = list;
                 type = Type.ARRAY;
             } else if (v.hasMembers()) {
-                Set<String> keys = v.getMemberKeys();
-                Map<String, Object> map = new LinkedHashMap(keys.size());
-                for (String key : keys) {
-                    Value child = v.getMember(key);
-                    map.put(key, new JsValue(child).value);
+                if (v.canExecute()) {
+                    if (v.canInstantiate()) {
+                        // js functions have members, can be executed and are instantiable
+                        value = new JsFunction.Instantiable(v);
+                    } else {
+                        // js, but anonymous / arrow function
+                        value = new JsFunction.Executable(v);
+                    }
+                    type = Type.FUNCTION;
+                } else {
+                    Set<String> keys = v.getMemberKeys();
+                    Map<String, Object> map = new LinkedHashMap(keys.size());
+                    for (String key : keys) {
+                        Value child = v.getMember(key);
+                        map.put(key, new JsValue(child).value);
+                    }
+                    value = map;
+                    type = Type.OBJECT;
                 }
-                value = map;
-                type = Type.OBJECT;
+            } else if (v.isNumber()) {
+                value = v.as(Number.class);
+                type = Type.OTHER;
+            } else if (v.isBoolean()) {
+                value = v.asBoolean();
+                type = Type.OTHER;
+            } else if (v.isString()) {
+                value = v.asString();
+                type = Type.OTHER;
             } else {
                 value = v.as(Object.class);
-                type = Type.OTHER;
+                if (value instanceof Function) {
+                    type = Type.FUNCTION;
+                } else {
+                    type = Type.OTHER;
+                }
             }
         } catch (Exception e) {
             if (logger.isTraceEnabled()) {
@@ -179,18 +199,18 @@ public class JsValue {
     public String toString() {
         return original.toString();
     }
-    
+
     public String toJsonOrXmlString(boolean pretty) {
-        return toString(value, pretty);
+        return JsonUtils.toString(value, pretty);
     }
 
     public String getAsString() {
-        return JsValue.toString(value);
+        return JsonUtils.toString(value);
     }
 
     public static Object fromJava(Object o) {
         if (o instanceof Function || o instanceof Proxy) {
-            return o; 
+            return o;
         } else if (o instanceof List) {
             return new JsList((List) o);
         } else if (o instanceof Map) {
@@ -219,83 +239,9 @@ public class JsValue {
     }
 
     public static byte[] toBytes(Value v) {
-        return toBytes(toJava(v));
-    }
-    
-    public static String toString(Object o) {
-        return toString(o, false);
+        return JsonUtils.toBytes(toJava(v));
     }
 
-    public static String toString(Object o, boolean pretty) {
-        if (o == null) {
-            return null;
-        }
-        if (o instanceof Map || o instanceof List) {
-            return JsonUtils.toJson(o, pretty);
-        } else if (o instanceof Node) {
-            return XmlUtils.toString((Node) o, pretty);
-        } else if (o instanceof byte[]) {
-            return FileUtils.toString((byte[]) o);
-        } else {
-            return o.toString();
-        }
-    }
-
-    public static byte[] toBytes(Object o) {
-        if (o == null) {
-            return null;
-        }
-        if (o instanceof Map || o instanceof List) {
-            return FileUtils.toBytes(JsonUtils.toJson(o));
-        } else if (o instanceof Node) {
-            return FileUtils.toBytes(XmlUtils.toString((Node) o));
-        } else if (o instanceof byte[]) {
-            return (byte[]) o;
-        } else {
-            return FileUtils.toBytes(o.toString());
-        }
-    }
-
-    public static Object fromBytes(byte[] bytes, boolean jsonStrict, ResourceType resourceType) {
-        if (bytes == null) {
-            return null;
-        }
-        String raw = FileUtils.toString(bytes);
-        return fromString(raw, jsonStrict, resourceType);
-    }
-
-    public static Object fromString(String raw, boolean jsonStrict, ResourceType resourceType) {
-        String trimmed = raw.trim();
-        if (trimmed.isEmpty()) {
-            return raw;
-        }
-        if (resourceType != null && resourceType.isBinary()) {
-            return raw;
-        }
-        switch (trimmed.charAt(0)) {
-            case '{':
-            case '[':
-                return jsonStrict ? JsonUtils.fromJsonStrict(raw) : JsonUtils.fromJson(raw);
-            case '<':
-                if (resourceType == null || resourceType.isXml()) {
-                    return XmlUtils.toXmlDoc(raw);
-                } else {
-                    return raw;
-                }
-            default:
-                return raw;
-        }
-    }
-
-    public static Object fromStringSafe(String raw) {
-        try {
-            return fromString(raw, false, null);
-        } catch (Exception e) {
-            logger.trace("failed to auto convert: {}", e + "");
-            return raw;
-        }
-    }
-    
     public static boolean isTruthy(Object o) {
         if (o == null) {
             return false;
@@ -308,5 +254,5 @@ public class JsValue {
         }
         return true;
     }
- 
+
 }

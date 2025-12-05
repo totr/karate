@@ -1,17 +1,18 @@
 package com.intuit.karate.core;
 
-import com.intuit.karate.TestUtils;
-import com.intuit.karate.StringUtils;
 import com.intuit.karate.Json;
 import com.intuit.karate.Match;
+import com.intuit.karate.StringUtils;
+import com.intuit.karate.TestUtils;
+import com.intuit.karate.graal.JsValue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- *
  * @author pthomas3
  */
 public class ScenarioEngineTest {
@@ -34,7 +35,7 @@ public class ScenarioEngineTest {
     }
 
     private void assign(String name, String expression) {
-        engine.assign(AssignType.AUTO, name, expression);
+        engine.assign(AssignType.AUTO, name, expression, false);
     }
 
     private void matchEquals(String lhs, String rhs) {
@@ -231,6 +232,11 @@ public class ScenarioEngineTest {
         matchEquals("temp", "<foo><bar>baz</bar></foo>");
         assign("temp", "get myMap /root/foo");
         matchEquals("temp", "<foo><bar>baz</bar></foo>");
+
+        // preserves whitespace in content
+        assign("myXml", "<root><foo><bar> baz </bar></foo></root>");
+        value = engine.evalKarateExpression("$myXml/root/foo/bar");
+        matchEval(value.getValue(), " baz ");
     }
 
     @Test
@@ -303,44 +309,44 @@ public class ScenarioEngineTest {
 
     @Test
     void testTypeConversion() {
-        engine.assign(AssignType.STRING, "myStr", "{ foo: { hello: 'world' } }");
+        engine.assign(AssignType.STRING, "myStr", "{ foo: { hello: 'world' } }", false);
         Variable value = engine.vars.get("myStr");
         assertTrue(value.isString());
         // auto converts string to json before json-path
         assign("foo", "$myStr.foo");
         matchEquals("foo", "{ hello: 'world' }");
         // json to string
-        engine.assign(AssignType.STRING, "myStr", "{ root: { foo: 'bar' } }");
+        engine.assign(AssignType.STRING, "myStr", "{ root: { foo: 'bar' } }", false);
         matchEquals("myStr", "'{\"root\":{\"foo\":\"bar\"}}'");
         // string to json
         assign("myStr", "'{\"root\":{\"foo\":\"bar\"}}'");
-        engine.assign(AssignType.JSON, "myJson", "myStr");
+        engine.assign(AssignType.JSON, "myJson", "myStr", false);
         value = engine.vars.get("myJson");
         assertTrue(value.isMap());
         matchEquals("myJson", "{ root: { foo: 'bar' } }");
         // json to xml
-        engine.assign(AssignType.XML, "myXml", "{ root: { foo: 'bar' } }");
+        engine.assign(AssignType.XML, "myXml", "{ root: { foo: 'bar' } }", false);
         value = engine.vars.get("myXml");
         assertTrue(value.isXml());
         matchEquals("myXml", "<root><foo>bar</foo></root>");
         // string to xml
         assign("myStr", "'<root><foo>bar</foo></root>'");
-        engine.assign(AssignType.XML, "myXml", "myStr");
+        engine.assign(AssignType.XML, "myXml", "myStr", false);
         matchEquals("myXml", "<root><foo>bar</foo></root>");
         // xml to string
-        engine.assign(AssignType.STRING, "myStr", "<root><foo>bar</foo></root>");
+        engine.assign(AssignType.STRING, "myStr", "<root><foo>bar</foo></root>", false);
         matchEquals("myStr", "'<root><foo>bar</foo></root>'");
         // xml attributes get re-ordered
-        engine.assign(AssignType.STRING, "myStr", "<foo><bar bbb=\"2\" aaa=\"1\"/></foo>");
+        engine.assign(AssignType.STRING, "myStr", "<foo><bar bbb=\"2\" aaa=\"1\"/></foo>", false);
         matchEquals("myStr", "'<foo><bar aaa=\"1\" bbb=\"2\"/></foo>'");
         // pojo to json
         assign("myPojo", "new com.intuit.karate.core.SimplePojo()");
         value = engine.vars.get("myPojo");
         assertTrue(value.isOther());
-        engine.assign(AssignType.JSON, "myJson", "myPojo");
+        engine.assign(AssignType.JSON, "myJson", "myPojo", false);
         matchEquals("myJson", "{ foo: null, bar: 0 }");
         // pojo to xml
-        engine.assign(AssignType.XML, "myXml", "myPojo");
+        engine.assign(AssignType.XML, "myXml", "myPojo", false);
         matchEquals("myXml", "<root><foo></foo><bar>0</bar></root>");
         assign("myXml2", "<root><foo>bar</foo><hello><text>hello \"world\"</text></hello><hello><text>hello \"moon\"</text></hello></root>");
         matchNotEquals("myXml2/root/text", "'#notnull'");

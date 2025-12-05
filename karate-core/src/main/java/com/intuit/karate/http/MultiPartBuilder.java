@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,7 @@
 package com.intuit.karate.http;
 
 import com.intuit.karate.Constants;
-import com.intuit.karate.graal.JsValue;
+import com.intuit.karate.JsonUtils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
@@ -33,12 +33,19 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.multipart.Attribute;
+import io.netty.handler.codec.http.multipart.DefaultHttpDataFactory;
 import io.netty.handler.codec.http.multipart.HttpPostRequestEncoder;
+import io.netty.handler.codec.http.multipart.HttpPostRequestEncoder.EncoderMode;
+import io.netty.util.CharsetUtil;
 import io.netty.handler.codec.http.multipart.InterfaceHttpData;
 import io.netty.handler.codec.http.multipart.MemoryFileUpload;
 import java.io.File;
 import java.nio.charset.Charset;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,7 +95,32 @@ public class MultiPartBuilder {
         this.multipart = multipart;
         DefaultFullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.valueOf("POST"), "/");
         try {
-            encoder = new HttpPostRequestEncoder(request, multipart);
+            encoder = new HttpPostRequestEncoder(new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE), request, multipart, CharsetUtil.UTF_8, EncoderMode.HTML5);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void addFile(String name, File file, Map<String, Object> map) {
+        String filename = (String) map.get("filename");
+        if (filename == null) {
+            filename = file.getName();
+        }
+        String contentType = (String) map.get("contentType");
+        ResourceType resourceType;
+        if (contentType == null) {
+            resourceType = ResourceType.fromFileExtension(filename);
+        } else {
+            resourceType = ResourceType.fromContentType(contentType);
+        }
+        if (resourceType == null) {
+            resourceType = ResourceType.BINARY;
+        }
+        if (contentType == null) {
+            contentType = resourceType.contentType;
+        }
+        try {
+            encoder.addBodyFileUpload(name, filename, file, contentType, !resourceType.isBinary());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -98,40 +130,38 @@ public class MultiPartBuilder {
         String name = (String) map.get("name");
         Object value = map.get("value");
         if (!multipart) {
-            String stringValue = JsValue.toString(value);
+            List<String> list;
+            if (value instanceof List) {
+                list = (List) value;
+            } else {
+                if (value == null) {
+                    list = Collections.emptyList();
+                } else {
+                    list = Collections.singletonList(value.toString());
+                }
+            }
             if (formFields == null) {
                 formFields = new HashMap();
             }
-            formFields.put(name, stringValue);
-            try {
-                encoder.addBodyAttribute(name, stringValue);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
+            for (String s : list) {
+                formFields.put(name, s);
+                try {
+                    encoder.addBodyAttribute(name, s);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
             }
         } else {
             if (value instanceof File) {
                 File file = (File) value;
-                String filename = (String) map.get("filename");
-                if (filename == null) {
-                    filename = file.getName();
-                }
-                String contentType = (String) map.get("contentType");
-                ResourceType resourceType;
-                if (contentType == null) {
-                    resourceType = ResourceType.fromFileExtension(filename);
-                } else {
-                    resourceType = ResourceType.fromContentType(contentType);
-                }
-                if (resourceType == null) {
-                    resourceType = ResourceType.BINARY;
-                }
-                if (contentType == null) {
-                    contentType = resourceType.contentType;
-                }
-                try {
-                    encoder.addBodyFileUpload(name, filename, file, contentType, !resourceType.isBinary());
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+                addFile(name, file, map);
+            } else if (value instanceof List) { // recurse, hope that adding to array of fields is supported
+                List list = (List) value;
+                for (Object o : list) {
+                    Map<String, Object> temp = new HashMap();
+                    temp.put("name", name);
+                    temp.put("value", o);
+                    part(temp);
                 }
             } else {
                 String contentType = (String) map.get("contentType");
@@ -140,29 +170,35 @@ public class MultiPartBuilder {
                     resourceType = ResourceType.fromObject(value);
                 } else {
                     resourceType = ResourceType.fromContentType(contentType);
-                }               
+                }
                 if (resourceType == null) {
                     resourceType = ResourceType.BINARY;
                 }
                 if (contentType == null) {
                     contentType = resourceType.contentType;
-                }                
+                }
                 Charset cs = null;
                 if (!resourceType.isBinary()) {
                     String charset = (String) map.get("charset");
-                    if (charset == null && client != null) { // TODO client null for unit test
+                    if (charset == null && client != null && client.getConfig() != null) { // mock clients can have nulls
                         cs = client.getConfig().getCharset();
                     } else if (charset != null) {
                         cs = Charset.forName(charset);
                     }
                 }
-                byte[] encoded = value == null ? Constants.ZERO_BYTES : JsValue.toBytes(value);
+                byte[] encoded = value == null ? Constants.ZERO_BYTES : JsonUtils.toBytes(value);
                 String filename = (String) map.get("filename");
                 if (filename == null) {
                     filename = ""; // will be treated as an inline value, behaves like null
                 }
                 String transferEncoding = (String) map.get("transferEncoding");
-                MemoryFileUpload item = new MemoryFileUpload(name, filename, contentType, transferEncoding, cs, encoded.length);
+                final Charset nullable = cs;
+                MemoryFileUpload item = new MemoryFileUpload(name, filename, contentType, transferEncoding, cs, encoded.length) {
+                    @Override
+                    public Charset getCharset() {
+                        return nullable; // workaround for netty api strictness
+                    }
+                };
                 try {
                     item.setContent(Unpooled.wrappedBuffer(encoded));
                     encoder.addBodyHttpData(item);
@@ -182,7 +218,34 @@ public class MultiPartBuilder {
         return part(map);
     }
 
+    public String toCurlCommand() {
+        StringBuilder sb = new StringBuilder();
+        Iterator<InterfaceHttpData> parts = encoder.getBodyListAttributes().iterator();
+        while (parts.hasNext()) {
+            InterfaceHttpData part = parts.next();
+            if (part instanceof Attribute) {
+                Attribute attr = (Attribute) part;
+                String value;
+                try {
+                    value = attr.getValue();
+                } catch (Exception e) {
+                    value = null;
+                    logger.error("failed to get multipart value: {}", e.getMessage());
+                }
+                sb.append("-d ")
+                        .append(part.getName())
+                        .append("=")
+                        .append(value);
+                if (parts.hasNext()) {
+                    sb.append(" \\\n");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     public byte[] build() {
+        // TODO move this to getter if possible
         for (InterfaceHttpData part : encoder.getBodyListAttributes()) {
             bodyForDisplay.append('\n').append(part.toString()).append('\n');
         }

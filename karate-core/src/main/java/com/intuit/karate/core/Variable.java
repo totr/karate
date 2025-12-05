@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,13 +28,13 @@ import com.intuit.karate.XmlUtils;
 import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.Json;
 import com.intuit.karate.JsonUtils;
-import com.intuit.karate.graal.JsFunction;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.graalvm.polyglot.Value;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Node;
@@ -76,13 +76,10 @@ public class Variable {
         }
         if (o == null) {
             type = Type.NULL;
+        } else if (o instanceof ProxyExecutable) {
+            type = Type.JS_FUNCTION;
         } else if (o instanceof Value) {
-            Value v = (Value) o;
-            if (v.canExecute()) {
-                type = Type.JS_FUNCTION;
-            } else {
-                type = Type.OTHER; // java.lang.Class
-            }
+            type = Type.OTHER; // java.lang.Class            
         } else if (o instanceof Function) {
             type = Type.JAVA_FUNCTION;
         } else if (o instanceof Node) {
@@ -99,7 +96,7 @@ public class Variable {
             type = Type.BOOLEAN;
         } else if (o instanceof byte[]) {
             type = Type.BYTES;
-        } else if (o instanceof Feature) {
+        } else if (o instanceof FeatureCall) {
             type = Type.FEATURE;
         } else {
             type = Type.OTHER;
@@ -121,10 +118,6 @@ public class Variable {
     
     public boolean isJsFunction() {
         return type == Type.JS_FUNCTION;
-    }
-    
-    public boolean isJsFunctionWrapper() {
-        return value instanceof JsFunction;
     }
     
     public boolean isBytes() {
@@ -167,6 +160,10 @@ public class Variable {
         return type == Type.FEATURE;
     }
     
+    public boolean isBoolean() {
+        return type == Type.BOOLEAN;
+    }
+    
     public boolean isTrue() {
         return type == Type.BOOLEAN && ((Boolean) value);
     }
@@ -186,7 +183,7 @@ public class Variable {
                 String xml = getAsString();
                 return XmlUtils.toXmlDoc(xml);
             case OTHER: // POJO
-                return XmlUtils.toXmlDoc(value);
+                return XmlUtils.fromJavaObject(value);
             default:
                 throw new RuntimeException("cannot convert to xml:" + this);
         }
@@ -231,11 +228,11 @@ public class Variable {
             case LIST:
             case MAP:
                 try {
-                return JsonUtils.toJson(value);
-            } catch (Throwable t) {
-                logger.warn("conversion to json string failed, will attempt to use fall-back approach: {}", t.getMessage());
-                return JsonUtils.toJsonSafe(value, false);
-            }
+                    return JsonUtils.toJson(value);
+                } catch (Throwable t) {
+                    logger.warn("conversion to json string failed, will attempt to use fall-back approach: {}", t.getMessage());
+                    return JsonUtils.toJsonSafe(value, false);
+                }
             case XML:
                 return XmlUtils.toString(getValue());
             default:

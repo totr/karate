@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,7 @@ import com.intuit.karate.core.FeatureRuntime;
 import com.intuit.karate.core.ScenarioEngine;
 import com.intuit.karate.core.ScenarioRuntime;
 import com.intuit.karate.core.StepResult;
+import com.intuit.karate.http.HttpClientFactory;
 import com.intuit.karate.http.ResourceType;
 
 import java.util.ArrayList;
@@ -50,7 +51,7 @@ public interface Driver extends Plugin {
     }
 
     public static Driver start(Map<String, Object> options) {
-        ScenarioRuntime runtime = FeatureRuntime.forTempUse().scenarios.next();
+        ScenarioRuntime runtime = FeatureRuntime.forTempUse(HttpClientFactory.DEFAULT).scenarios.next();
         ScenarioEngine.set(runtime.engine);
         return DriverOptions.start(options, runtime);
     }
@@ -380,7 +381,7 @@ public interface Driver extends Plugin {
     }
 
     @AutoDef
-    default Mouse mouse(int x, int y) {
+    default Mouse mouse(Number x, Number y) {
         return new DriverMouse(this).move(x, y);
     }
 

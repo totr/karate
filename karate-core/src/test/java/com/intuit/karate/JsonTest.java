@@ -1,5 +1,9 @@
 package com.intuit.karate;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
@@ -92,20 +96,49 @@ class JsonTest {
         json.set("$[0].name.first", "Bob");
         match(json, "[{ name: { first: 'Bob' } }]");
     }
+
+    @Test
+    void testSetMultipleNestedArray(){
+        Json json = Json.object();
+        json.set("first.second[0].third[0].fourth[0]","hello");
+        match(json, "{ first :{ second :[{ third :[{ fourth :[ hello ]}]}]}}");
+        json.set("first.fifth[0].sixth[1].seventh[2]","hello");
+        match(json,"{ first :{ second :[{ third :[{ fourth :[ 'hello' ]}]}], fifth :[{ sixth :[null,{ seventh :[null,null, hello ]}]}]}}");
+    }
     
     @Test
     void testJsonApi() {
         Json json = Json.of("{ a: 1, b: { c: 2 } }");
         assertEquals(2, (int) json.get("b.c"));
         assertEquals(2, (int) json.getOptional("b.c").get());
-        assertNull(json.getOrNull("b.d"));
-        assertEquals(3, (int) json.getOr("b.d", 3));
-        try {
-            json.getOptional("b.d").get();
-            fail("expected exception");
-        } catch (Exception e) {
-            assertTrue(e instanceof NoSuchElementException);
-        }
+        assertNull(json.get("b.d", null));
+        assertEquals(3, (int) json.get("b.d", 3));
+//        try {
+//            json.getOptional("b.d").get();
+//            fail("expected exception");
+//        } catch (Exception e) {
+//            assertTrue(e instanceof NoSuchElementException);
+//        }
+    }
+    
+    @Test
+    void testGetAsJson() {
+        Json json = Json.of("{ a: { b: [1, 2], c: { d: 1, e: 2 } } }");       
+        Json child1 = json.getJson("a.b");
+        assertTrue(child1.isArray());
+        assertEquals(Arrays.asList(1, 2), child1.asList());
+        Json child2 = json.getJson("a.c");
+        assertFalse(child2.isArray());
+        Map expected = Json.of("{ d: 1, e: 2 }").asMap();
+        assertEquals(expected, child2.asMap());        
+    }
+    
+    @Test
+    void testGetAsJava() {
+        Map map = Json.parse("{ a: 1 }");
+        assertEquals(map, Collections.singletonMap("a", 1));
+        List list = Json.parse("[ 1, 2 ]");
+        assertEquals(list, Arrays.asList(1, 2));
     }
 
 }

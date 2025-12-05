@@ -17,8 +17,11 @@ class FeatureServerTest {
     static MockServer server;
 
     @BeforeAll
-    static void beforeClass() {
-        server = MockServer.feature("classpath:com/intuit/karate/fatjar/server.feature").http(0).build();
+    static void beforeAll() {
+        server = MockServer
+                .feature("classpath:com/intuit/karate/fatjar/server.feature")
+                .pathPrefix("/v1")
+                .http(0).build();
         int port = server.getPort();
         System.setProperty("karate.server.port", port + "");
         // needed to ensure we undo what the other test does to the jvm else ci fails
@@ -35,7 +38,7 @@ class FeatureServerTest {
     }
 
     @AfterAll
-    static void afterClass() {
+    static void afterAll() {
         server.stop();
     }
 

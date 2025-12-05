@@ -45,4 +45,28 @@ class MockRunner {
         run("binary.feature");
     }
 
+    @Test
+    void testBrotli() {
+        run("brotli.feature");
+    }
+    
+    @Test
+    void testHtml() {
+        run("html.feature");
+    } 
+    
+    @Test
+    void testMalformed() {
+        run("malformed.feature");
+    }     
+    
+    @Test
+    void testMultipart() {
+        run("upload.feature");
+    }    
+
+    @Test
+    void testInvalidCookie() {
+    	run("invalid-cookie.feature");
+    }
 }

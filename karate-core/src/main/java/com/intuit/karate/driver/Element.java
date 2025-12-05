@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2019 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,6 +83,8 @@ public interface Element {
     Element waitForText(String text);
 
     Object script(String expression);
+    
+    Object scriptAll(String locator, String expression);
     
     Element optional(String locator);
     

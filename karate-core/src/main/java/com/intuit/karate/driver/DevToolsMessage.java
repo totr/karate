@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,7 @@ public class DevToolsMessage {
     private Json params;
     private Map<String, Object> error;
     private Variable result;
-    private Integer timeout;
+    private Integer timeout;        
 
     public Integer getId() {
         return id;
@@ -91,15 +91,15 @@ public class DevToolsMessage {
     }
 
     public Variable getResult() {
-        return result;
+        return result == null ? Variable.NULL : result;
     }
 
-    public <T> T getResult(String path, Class<T> clazz) {
+    public <T> T getResult(String path) {
         if (result == null || result.isNull()) {
             return null;
         }
         Json json = Json.of(result.getValue());
-        return json.get(path, clazz);
+        return json.get(path);
     }
 
     public void setResult(Variable result) {
@@ -127,12 +127,16 @@ public class DevToolsMessage {
         return "error".equals(resultError);
     }
 
-    public Variable getResult(String key) {
+    public Variable getResultVariable(String key) {
         if (result == null || !result.isMap()) {
             return null;
         }
         return new Variable(result.<Map>getValue().get(key));
     }
+
+    public Map<String, Object> getError() {
+        return error;
+    }        
 
     public DevToolsMessage(DevToolsDriver driver, String method) {
         this.driver = driver;

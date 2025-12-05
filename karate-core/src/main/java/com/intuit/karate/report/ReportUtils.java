@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,26 +22,26 @@
  * THE SOFTWARE.
  */
 package com.intuit.karate.report;
-
 import com.intuit.karate.FileUtils;
 import com.intuit.karate.XmlUtils;
 import com.intuit.karate.JsonUtils;
+import com.intuit.karate.StringUtils;
 import com.intuit.karate.core.FeatureResult;
 import com.intuit.karate.core.ScenarioResult;
 import com.intuit.karate.core.StepResult;
 import com.intuit.karate.resource.ResourceUtils;
 import java.io.File;
 import java.io.InputStream;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -59,13 +59,27 @@ public class ReportUtils {
         "favicon.ico",
         "karate-logo.png",
         "karate-logo.svg",
+        "karate-labs-logo-ring.svg",
         "com/intuit/karate/report/bootstrap.min.css",
         "com/intuit/karate/report/bootstrap.min.js",
         "com/intuit/karate/report/jquery.min.js",
         "com/intuit/karate/report/jquery.tablesorter.min.js",
+        "com/intuit/karate/report/jquery-ui.min.js",
+        "com/intuit/karate/report/vis.min.css",
+        "com/intuit/karate/report/vis.min.js",
         "com/intuit/karate/report/karate-report.css",
-        "com/intuit/karate/report/karate-report.js"
+        "com/intuit/karate/report/karate-report.js",
+        "com/intuit/karate/report/Resemble.js"
     };
+    
+    public static Map<String, Object> commonVars() {
+        Map<String, Object> map = new HashMap(5);
+        map.put("userUuid", FileUtils.USER_UUID);
+        map.put("karateVersion", FileUtils.KARATE_VERSION);
+        map.put("karateMeta", FileUtils.KARATE_META);
+        map.put("karateTelemetry", FileUtils.KARATE_TELEMETRY);
+        return map;
+    }    
 
     public static String getDateString() {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss a");
@@ -140,14 +154,38 @@ public class ReportUtils {
             sb.append('\n');
             if (sr.getResult().isFailed()) {
                 sb.append("\nStack Trace:\n");
-                StringWriter sw = new StringWriter();
                 error = sr.getResult().getError();
-                error.printStackTrace(new PrintWriter(sw));
-                sb.append(sw.toString());
+                sb.append(StringUtils.throwableToString(error));
                 sb.append('\n');
             }
         }
         return error;
+    }
+
+    private static Element addCustomTags(Element testCase, Document doc, ScenarioResult sr){
+        //Adding requirement and test tags
+        Element properties = null;   
+
+        if (sr.getScenario() != null){
+            List<String> tags = sr.getScenario().getTagsEffective().getTags();
+            if (tags.size() > 0 ){
+                properties = doc.createElement("properties");
+                
+                for (String tag : tags) {                        
+                    String[] innerTags = tag.split("=");
+                    int size = innerTags.length;
+                    Element requirement = doc.createElement("property");
+                    
+                    if(size > 1){
+                        requirement.setAttribute("name", innerTags[0]);     
+                        requirement.setAttribute("value", innerTags[1]);
+                        properties.appendChild(requirement);
+                    }
+                }
+            }
+        }
+
+        return properties;
     }
 
     public static File saveJunitXml(String targetDir, FeatureResult result, String fileName) {
@@ -171,15 +209,26 @@ public class ReportUtils {
             testCase.setAttribute("classname", baseName);
             StringBuilder sb = new StringBuilder();
             Throwable error = appendSteps(sr.getStepResults(), sb);
-            testCase.setAttribute("name", sr.getScenario().getRefIdAndName());
+            String name = sr.getScenario().getName();
+            if (StringUtils.isBlank(name)) {
+                name = sr.getScenario().getUniqueId();
+            }
+            testCase.setAttribute("name", name);
             testCase.setAttribute("time", formatter.format(sr.getDurationMillis() / 1000));
             Element stepsHolder;
-            if (error != null) {
+            if (error != null && sr.isFailed()) {
                 stepsHolder = doc.createElement("failure");
                 stepsHolder.setAttribute("message", error.getMessage());
             } else {
                 stepsHolder = doc.createElement("system-out");
             }
+
+            Element properties = null;
+            properties = addCustomTags(testCase, doc, sr);
+            if(properties != null && properties.getChildNodes().getLength() > 0){
+                testCase.appendChild(properties);
+            }
+            
             testCase.appendChild(stepsHolder);
             stepsHolder.setTextContent(sb.toString());
             xmlString.append(XmlUtils.toString(testCase)).append('\n');

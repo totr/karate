@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
  */
 package com.intuit.karate.template;
 
+import com.intuit.karate.graal.JsValue;
 import com.intuit.karate.resource.Resource;
 import com.intuit.karate.resource.ResourceResolver;
 import java.util.Map;
@@ -60,8 +61,15 @@ public class ResourceHtmlTemplateResolver implements ITemplateResolver {
 
     @Override
     public TemplateResolution resolveTemplate(IEngineConfiguration ec, String ownerTemplate, String name, Map<String, Object> templateResolutionAttributes) {
+        if (name.startsWith("${")) {
+            JsValue jv = KarateEngineContext.get().evalLocal("`" + name + "`", true);
+            name = jv.getAsString();
+        }        
+        if (!name.endsWith(".html")) {
+            name = name + ".html";
+        }
         Resource resource = resourceResolver.resolve(ownerTemplate, name);
-        KarateTemplateResource templateResource = new KarateTemplateResource(resource);
+        KarateTemplateResource templateResource = new KarateTemplateResource(ownerTemplate, resource);
         return new TemplateResolution(templateResource, TemplateMode.HTML, AlwaysValidCacheEntryValidity.INSTANCE);
     }
 

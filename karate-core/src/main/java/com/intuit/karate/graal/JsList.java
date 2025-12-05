@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -43,8 +43,8 @@ public class JsList implements ProxyArray, List {
 
     private final List list;
 
-    public JsList(Set set) {
-        this(new ArrayList(set));
+    public JsList(Collection collection) {
+        this(new ArrayList(collection));
     }
 
     public JsList(List list) {

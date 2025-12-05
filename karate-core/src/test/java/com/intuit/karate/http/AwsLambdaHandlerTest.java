@@ -6,7 +6,6 @@ import com.intuit.karate.Match;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.util.List;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
@@ -26,15 +25,16 @@ class AwsLambdaHandlerTest {
 
     void init(boolean classpath) {
         ServerConfig config = classpath ? new ServerConfig("classpath:demo") : new ServerConfig("src/test/java/demo");
+        config.autoCreateSession(true);
         handler = new AwsLambdaHandler(new RequestHandler(config));
     }
 
     String handle(String file) {
         Map<String, Object> res = handleAsMap(file);
-        Map<String, List<String>> headers = (Map) res.get("multiValueHeaders");
-        List<String> vals = headers.get("Set-Cookie");
-        if (vals != null) {
-            sessionId = vals.get(0);
+        Map<String, String> headers = (Map) res.get("headers");
+        String cookie = headers.get("Set-Cookie");
+        if (cookie != null) {
+            sessionId = cookie;
         }
         return (String) res.get("body");
     }
@@ -57,8 +57,9 @@ class AwsLambdaHandlerTest {
         return Json.of(json).asMap();
     }
 
-    void testFormInternal() {
-        String body = handle("index.json");
+    void testFormInternal(boolean root) {
+        String name = root ? "root.json" : "index.json";
+        String body = handle(name);
         // logger.debug("{}", body);
         assertTrue(body.startsWith("<!doctype html>"));
         assertTrue(body.contains("<span>John Smith</span>"));
@@ -72,20 +73,26 @@ class AwsLambdaHandlerTest {
     @Test
     void testFormClassPath() {
         init(true);
-        testFormInternal();
+        testFormInternal(false);
     }
+    
+    @Test
+    void testRootClassPath() {
+        init(true);
+        testFormInternal(true);
+    }    
 
     @Test
-    void testFormFileSystem() {
+    void testRootFileSystem() {
         init(false);
-        testFormInternal();
+        testFormInternal(true);
     }
 
     void testApiInternal() {
         Map<String, Object> res = handleAsMap("api.json");
-        Map<String, List<String>> headers = (Map) res.get("multiValueHeaders");
-        List<String> vals = headers.get("foo");
-        assertEquals(vals.get(0), "bar");
+        Map<String, String> headers = (Map) res.get("headers");
+        String val = headers.get("foo");
+        assertEquals(val, "bar");
         String body = (String) res.get("body");
         assertEquals("{\"hello\":\"world\"}", body);
         Integer status = (Integer) res.get("statusCode");

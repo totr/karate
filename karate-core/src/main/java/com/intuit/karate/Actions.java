@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2018 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 
 /**
- *
  * @author pthomas3
  */
 public interface Actions {
@@ -46,6 +45,8 @@ public interface Actions {
 
     void csv(String name, String exp);
 
+    void csvDocString(String name, String exp);
+
     void json(String name, String exp);
 
     void string(String name, String exp);
@@ -58,7 +59,7 @@ public interface Actions {
 
     void configure(String key, String exp);
 
-    void configureDocstring(String key, String exp);
+    void configureDocString(String key, String exp);
 
     void cookie(String name, String value);
 
@@ -68,15 +69,19 @@ public interface Actions {
 
     void def(String name, String exp);
 
-    void defDocstring(String name, String exp);
+    void defDocString(String name, String exp);
 
     void eval(String exp);
 
-    void evalDocstring(String exp);
+    void evalAssignDocString(String lhs, String rhs);
+
+    void evalDocString(String exp);
 
     void eval(String name, String dotOrParen, String exp);
 
     void evalIf(String exp);
+
+    void evalDelete(String exp);
 
     void formField(String name, String exp);
 
@@ -120,11 +125,11 @@ public interface Actions {
 
     void request(String body);
 
-    void requestDocstring(String body);
+    void requestDocString(String body);
 
     void set(String name, String path, String value);
 
-    void setDocstring(String name, String path, String value);
+    void setDocString(String name, String path, String value);
 
     void set(String name, String path, List<Map<String, String>> table);
 
@@ -140,7 +145,11 @@ public interface Actions {
 
     void yaml(String name, String exp);
 
+    void yamlDocString(String name, String exp);
+
     void doc(String exp);
+
+    void compareImage(String exp);
 
     //==========================================================================
     //

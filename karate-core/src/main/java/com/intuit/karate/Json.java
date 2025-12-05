@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,10 @@ public class Json {
             return new Json(JsonPath.parse(json));
         }
     }
+    
+    public static <T> T parse(String json) {
+        return Json.of(json).value();
+    }
 
     private Json(DocumentContext doc) {
         this.doc = doc;
@@ -78,18 +82,26 @@ public class Json {
     }
 
     public Json getJson(String path) {
-        return Json.of(get(path, String.class));
+        return Json.of(get(path, Object.class));
+    }
+
+    public <T> List<T> getAll(String prefix, List<String> paths) {
+        List<T> res = new ArrayList();
+        for(String path : paths) {
+            res.add((T) doc.read(prefix(prefix + path)));
+        }
+        return res;
+    }
+
+    public <T> List<T> getAll(List<String> paths) {
+        return Json.this.getAll("", paths);
     }
 
     public <T> T get(String path) {
         return (T) doc.read(prefix(path));
     }
 
-    public <T> T getOrNull(String path) {
-        return (T) getOptional(path).orElse(null);
-    }
-
-    public <T> T getOr(String path, T defaultValue) {
+    public <T> T get(String path, T defaultValue) {
         return (T) getOptional(path).orElse(defaultValue);
     }
 
@@ -109,7 +121,7 @@ public class Json {
         return list.get(0);
     }
 
-    public <T> T get(String path, Class<T> clazz) {
+    public <T> T getAs(String path, Class<T> clazz) {
         return doc.read(prefix(path), clazz);
     }
 
@@ -137,26 +149,31 @@ public class Json {
     public Map<String, Object> asMap() {
         return value();
     }
+    
+    public Json set(String path, Object value) {
+        setInternal(path, value);
+        return this;
+    }    
 
     public Json set(String path, String value) {
         if (JsonUtils.isJson(value)) {
             setInternal(path, Json.of(value).value());
         } else {
-            if (value != null && value.charAt(0) == '\\') {
+            if (value != null && !value.isEmpty() && value.charAt(0) == '\\') {
                 value = value.substring(1);
             }
             setInternal(path, value);
         }
         return this;
     }
-
-    public Json remove(String path) {
-        doc.delete(prefix(path));
+    
+    public Json setAsString(String path, String value) {
+        setInternal(path, value);
         return this;
     }
 
-    public Json set(String path, Object value) {
-        setInternal(path, value);
+    public Json remove(String path) {
+        doc.delete(prefix(path));
         return this;
     }
 
@@ -252,7 +269,7 @@ public class Json {
                     if (!pathExists(pair.left)) { // a necessary repetition
                         doc.set(pair.left, new LinkedHashMap());
                     }
-                    doc.put(pair.left, pair.right, new LinkedHashMap());
+                    doc.put(pair.left, pair.right, array ? new ArrayList() : new LinkedHashMap());
                 }
             } else {
                 doc.put(pair.left, pair.right, array ? new ArrayList() : new LinkedHashMap());

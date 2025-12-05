@@ -1,19 +1,22 @@
 session.payments = session.payments || {};
 session.counter = session.counter || 1;
-var id = ~~request.pathParam;
-if (id) {
+if (request.pathMatches('/payments/{id}')) {
+  let id = request.pathParams.id;
   if (request.put) {
     var payment = request.body;
     session.payments[id] = payment;
     response.body = payment;
   } else if (request.delete) {
-    session.payments = context.remove(session.payments, id);
+    delete session.payments[id];
   } else { // get
     response.body = session.payments[id];
+    if (!response.body) {
+      response.status = 404;
+    }
   }
 } else if (request.post) {
   var payment = request.body;
-  id = session.counter++;
+  let id = '' + session.counter++;
   payment.id = id;
   session.payments[id] = payment;
   response.body = payment;

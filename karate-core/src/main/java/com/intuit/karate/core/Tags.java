@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright 2020 Intuit Inc.
+ * Copyright 2022 Karate Labs Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -132,7 +132,10 @@ public class Tags implements Iterable<Tag> {
     }
 
     public boolean evaluate(String tagSelector, String karateEnv) {
-        if (tags.contains(Tag.IGNORE)) {
+        if (StringUtils.containsIgnoreCase(tags, Tag.IGNORE)) {
+            return false;
+        }
+        if (tagValues.containsKey(Tag.SETUP)) {
             return false;
         }
         Values envValues = valuesFor(Tag.ENV);
@@ -253,5 +256,10 @@ public class Tags implements Iterable<Tag> {
         }
         return sb.toString();
     }
+
+    @Override
+    public String toString() {
+        return tags.toString();
+    }        
 
 }
